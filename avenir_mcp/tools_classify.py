@@ -13,7 +13,7 @@ from fastmcp.exceptions import ToolError
 from mcp.types import InputRequiredResult
 from pydantic import Field
 
-from avenir_mcp import client, split, triage, writes
+from avenir_mcp import client, retry, split, triage, writes
 from avenir_mcp.app import WRITE_TAG, mcp, set_read_only_wording
 from avenir_mcp.confirm import WriteResult, WriteStatus, gate, merged, write_plan
 
@@ -146,8 +146,42 @@ async def apply_categories(
     except ValueError as error:
         raise ToolError(str(error)) from error
     action = "Recategorise and approve" if approve else "Recategorise"
-    result, _ = await write_plan(ctx, plan_id, plan, action, confirmation)
+    result, operation_id = await write_plan(ctx, plan_id, plan, action, confirmation)
+    if isinstance(result, WriteResult) and result.status == "applied":
+        await _approve(plan_id, plan.to_approve, operation_id)
     return result
+
+
+async def _approve(plan_id: str, rows: list[writes.Change], operation_id: str | None) -> None:
+    """Approve the transactions already in the right category, once the categories are journaled.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        rows: The transactions to approve.
+        operation_id: The journal id of the categories just changed, or None.
+
+    Raises:
+        ToolError: If YNAB refused, or did not answer, saying what may have changed and
+            which operation_id undoes the categories.
+    """
+    if not rows:
+        return
+    try:
+        await client.approve_transactions(plan_id, [c.transaction_id for c in rows])
+    except RuntimeError as error:
+        unknown = isinstance(error, retry.YnabUnavailable)
+        outcome = (
+            "the approval may or may not have applied: check in YNAB"
+            if unknown
+            else "nothing was approved"
+        )
+        categories = (
+            ("" if unknown else " and nothing was changed")
+            if operation_id is None
+            else f"; the categories were changed: undo_operation with operation_id "
+            f"{operation_id} reverts them"
+        )
+        raise ToolError(f"Approving failed ({error}): {outcome}{categories}.") from error
 
 
 class SplitResult(split.SplitPlan):

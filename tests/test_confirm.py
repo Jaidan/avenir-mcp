@@ -165,7 +165,7 @@ def _write(ctx: _Ctx, plan: writes.Plan) -> Any:
 
 @pytest.fixture(name="ynab")
 def _ynab(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> list[Any]:
-    """A fake YNAB recording the writes; the journal in a temporary file."""
+    """A fake YNAB recording category writes; the journal in a temporary file."""
     monkeypatch.setenv("AVENIR_MCP_JOURNAL", str(tmp_path / "journal.jsonl"))
     calls: list[Any] = []
 
@@ -173,12 +173,7 @@ def _ynab(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> list[Any]:
         calls.append(("categorise", moves, approved))
         return []
 
-    async def approve(_plan: str, tx_ids: list[str]) -> dict[str, int]:
-        calls.append(("approve", tx_ids))
-        return {"approved": len(tx_ids)}
-
     monkeypatch.setattr("avenir_mcp.client.set_transaction_categories", categorise)
-    monkeypatch.setattr("avenir_mcp.client.approve_transactions", approve)
     return calls
 
 
@@ -194,7 +189,8 @@ def test_a_modern_answer_applies_the_same_assignments_in_another_order(ynab: lis
     assert isinstance(request, types.InputRequiredResult)
     result = _write(_answered(request), _approving(txs, slice(None, None, -1)))
     assert result.status == "applied"
-    assert ynab == [("categorise", [("t1", "c-food")], {"t1": True}), ("approve", ["t2"])]
+    assert ynab == [("categorise", [("t1", "c-food")], {"t1": True})]
+    assert [c.transaction_id for c in result.approvals] == ["t2"]
 
 
 def test_a_modern_answer_is_refused_once_a_row_to_approve_changes(ynab: list[Any]) -> None:

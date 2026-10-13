@@ -295,8 +295,8 @@ async def write_plan(
 ) -> tuple[WriteResult | types.InputRequiredResult, str | None]:
     """Confirm a recategorisation plan, apply it and journal it.
 
-    The categories are written and journaled first, then the transactions only
-    approved are approved; the journal restores categories, never an approval.
+    The categories are written and journaled; the transactions only approved
+    (`plan.to_approve`) are the caller's to approve once this returns "applied".
 
     Args:
         ctx: The MCP context of the call.
@@ -308,10 +308,6 @@ async def write_plan(
     Returns:
         The result (or the input request to return), and the new operation's id when
         categories were changed.
-
-    Raises:
-        ToolError: If approving failed, saying which operation_id undoes the categories
-            already changed.
     """
     if not plan.changes and not plan.to_approve:
         message = "Nothing to change." + (
@@ -334,7 +330,6 @@ async def write_plan(
         )
         return result_of("confirmation_required", message, plan, confirmation=decision), None
     operation_id = await _recategorise(plan_id, plan.changes) if plan.changes else None
-    await _approve(plan_id, plan.to_approve, operation_id)
     if operation_id is None:
         message = "Approved. An approval cannot be undone with undo_operation."
     else:
@@ -368,31 +363,6 @@ async def _recategorise(plan_id: str, changes: list[writes.Change]) -> str:
         for c in changes
     ]
     return journal.Journal(journal.default_path()).record(plan_id, "categorize", moves)
-
-
-async def _approve(plan_id: str, rows: list[writes.Change], operation_id: str | None) -> None:
-    """Approve the transactions already in the right category, if any.
-
-    Args:
-        plan_id: YNAB plan id or 'last-used'.
-        rows: The transactions to approve.
-        operation_id: The journal id of the categories just changed, or None.
-
-    Raises:
-        ToolError: If YNAB refused or did not answer, saying what was already changed.
-    """
-    if not rows:
-        return
-    try:
-        await client.approve_transactions(plan_id, [c.transaction_id for c in rows])
-    except RuntimeError as error:
-        done = (
-            "nothing was changed"
-            if operation_id is None
-            else f"the categories were changed: undo_operation with operation_id "
-            f"{operation_id} reverts them"
-        )
-        raise ToolError(f"Approving failed ({error}); {done}.") from error
 
 
 class NotApplied(Model):

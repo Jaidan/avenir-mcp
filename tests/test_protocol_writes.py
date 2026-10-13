@@ -15,7 +15,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 
-from avenir_mcp import confirm, journal, server
+from avenir_mcp import confirm, journal, retry, server
 
 from .mcp_helpers import FLAT, FORGED, accept, call, decline
 
@@ -48,7 +48,7 @@ class _Budget:
         self.patches: list[list[tuple[str, str | None]]] = []
         self.sent_approved: list[dict[str, bool]] = []
         self.approved_ids: list[list[str]] = []
-        self.approve_fails = False
+        self.approve_fails: Exception | None = None
 
     @property
     def approved_sent(self) -> dict[str, bool]:
@@ -57,8 +57,8 @@ class _Budget:
 
     async def approve_transactions(self, _budget_id: str, tx_ids: list[str]) -> dict[str, int]:
         """Record the bulk approval and apply it, or fail as YNAB can."""
-        if self.approve_fails:
-            raise RuntimeError("YNAB 500: try later")
+        if self.approve_fails is not None:
+            raise self.approve_fails
         self.approved_ids.append(tx_ids)
         for tx in self.transactions:
             if tx["id"] in tx_ids:
@@ -486,33 +486,60 @@ def test_a_code_is_stale_once_a_row_to_approve_changes(budget: _Budget) -> None:
     assert not budget.approved_ids
 
 
-def test_a_failed_approval_names_the_operation_to_undo(budget: _Budget, tmp_path: Path) -> None:
+_REFUSED = RuntimeError("YNAB 400: refused")
+_NO_ANSWER = retry.YnabUnavailable("YNAB did not answer")
+
+
+@pytest.mark.parametrize(
+    ("failure", "outcome"),
+    [
+        (_REFUSED, "nothing was approved"),
+        (_NO_ANSWER, "the approval may or may not have applied: check in YNAB"),
+    ],
+)
+def test_a_failed_approval_names_the_operation_to_undo(
+    budget: _Budget, tmp_path: Path, failure: Exception, outcome: str
+) -> None:
     """Categories are journaled before approving: if approving fails, the error says how to undo."""
     budget.transactions.append(_unapproved_t2())
-    budget.approve_fails = True
+    budget.approve_fails = failure
     assign = [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-fun"}]
     result = call(
         "apply_categories", {"plan_id": "b1", "assignments": assign, "approve": True}, accept
     )
     assert result.is_error
     text = result.content[0].text
-    assert "YNAB 500" in text
-    assert "operation_id" in text
+    assert str(failure) in text
+    assert outcome in text
     assert budget.patches == [[("t1", "c-food")]]
     entry = journal.Journal(tmp_path / "journal.jsonl").find("b1")
     assert entry is not None
-    assert f"operation_id {entry.operation_id}" in text
+    assert f"undo_operation with operation_id {entry.operation_id} reverts them" in text
 
 
-def test_a_failed_approval_of_rows_only_says_nothing_changed(budget: _Budget) -> None:
-    """With no category to change, a failed approval leaves nothing to undo."""
+def test_a_refused_approval_of_rows_only_says_nothing_changed(budget: _Budget) -> None:
+    """YNAB refused and there was no category to change: nothing changed at all."""
     budget.transactions = [_unapproved_t2("c-food") | {"id": "t1"}]
-    budget.approve_fails = True
+    budget.approve_fails = _REFUSED
     result = call(
         "apply_categories", {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}, accept
     )
     assert result.is_error
-    assert "nothing was changed" in result.content[0].text
+    assert result.content[0].text.endswith("nothing was approved and nothing was changed.")
+    assert not budget.patches
+
+
+def test_an_unanswered_approval_of_rows_only_says_to_check(budget: _Budget) -> None:
+    """YNAB answered nothing: the approval's outcome is unknown, and nothing claims otherwise."""
+    budget.transactions = [_unapproved_t2("c-food") | {"id": "t1"}]
+    budget.approve_fails = _NO_ANSWER
+    result = call(
+        "apply_categories", {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}, accept
+    )
+    assert result.is_error
+    text = result.content[0].text
+    assert text.endswith("the approval may or may not have applied: check in YNAB.")
+    assert "nothing was changed" not in text
 
 
 def test_undo_of_an_approving_operation_keeps_the_approval(budget: _Budget) -> None:

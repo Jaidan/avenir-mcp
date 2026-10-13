@@ -53,6 +53,7 @@ Confirmation works as for apply_categories.
 | `changes[].from_category` | string \| null | Category name before; null for none. |
 | `changes[].to_category_id` | string \| null | Category id after; null for none. |
 | `changes[].to_category` | string \| null | Category name after; null for none. |
+| `changes[].approved` | boolean | The approval sent with the change: the transaction's own. |
 | `unchanged_count` | integer | Assignments that would change nothing and were skipped. |
 | `conflicts` | array of string | Ids left alone because they changed since the operation (undo only). |
 | `confirmation` | string \| null | Single-use code confirming exactly this preview, valid 10 minutes; null unless status is confirmation_required. |
@@ -83,7 +84,8 @@ Answer on the demo budget:
       "from_category_id": "cat-groceries",
       "from_category": "Groceries",
       "to_category_id": "cat-phone",
-      "to_category": "Phone"
+      "to_category": "Phone",
+      "approved": true
     },
     {
       "transaction_id": "tx-049",
@@ -93,7 +95,8 @@ Answer on the demo budget:
       "from_category_id": "cat-transport",
       "from_category": "Transport",
       "to_category_id": "cat-restaurants",
-      "to_category": "Restaurants"
+      "to_category": "Restaurants",
+      "approved": true
     }
   ],
   "unchanged_count": 0,

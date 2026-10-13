@@ -54,6 +54,7 @@ Amounts are in currency units.
 | `changes[].from_category` | string \| null | Category name before; null for none. |
 | `changes[].to_category_id` | string \| null | Category id after; null for none. |
 | `changes[].to_category` | string \| null | Category name after; null for none. |
+| `changes[].approved` | boolean | The approval sent with the change: the transaction's own. |
 | `unchanged_count` | integer | Assignments that would change nothing and were skipped. |
 | `conflicts` | array of string | Ids left alone because they changed since the operation (undo only). |
 | `confirmation` | string \| null | Single-use code confirming exactly this preview, valid 10 minutes; null unless status is confirmation_required. |
@@ -94,7 +95,8 @@ Réponse sur le budget de démonstration :
       "from_category_id": "cat-phone",
       "from_category": "Téléphone",
       "to_category_id": "cat-groceries",
-      "to_category": "Courses"
+      "to_category": "Courses",
+      "approved": true
     },
     {
       "transaction_id": "tx-049",
@@ -104,7 +106,8 @@ Réponse sur le budget de démonstration :
       "from_category_id": "cat-restaurants",
       "from_category": "Restaurants",
       "to_category_id": "cat-transport",
-      "to_category": "Transports"
+      "to_category": "Transports",
+      "approved": true
     }
   ],
   "unchanged_count": 0,

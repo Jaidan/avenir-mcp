@@ -58,6 +58,7 @@ def test_plan_lists_each_change_with_before_and_after() -> None:
             "from_category": None,
             "to_category_id": "c-food",
             "to_category": "Groceries",
+            "approved": False,
         },
         {
             "transaction_id": "t2",
@@ -68,9 +69,31 @@ def test_plan_lists_each_change_with_before_and_after() -> None:
             "from_category": "Leisure",
             "to_category_id": "c-food",
             "to_category": "Groceries",
+            "approved": False,
         },
     ]
     assert plan.unchanged_count == 0
+
+
+def test_plan_carries_each_transactions_approval() -> None:
+    """The change records whether the transaction is approved, so the write keeps it."""
+    plan = writes.plan_categorization(
+        [_tx("t1", approved=True), _tx("t2", approved=False)],
+        _CATEGORIES,
+        [
+            writes.Assignment(transaction_id="t1", category_id="c-food"),
+            writes.Assignment(transaction_id="t2", category_id="c-food"),
+        ],
+    )
+    assert [c.approved for c in plan.changes] == [True, False]
+
+
+def test_undo_carries_each_transactions_approval() -> None:
+    """Undoing keeps the approval the transaction has now."""
+    plan = writes.plan_undo(
+        [_tx("t1", "c-food", approved=True)], _CATEGORIES, [_move("t1", "c-fun", "c-food")]
+    )
+    assert [c.approved for c in plan.changes] == [True]
 
 
 def test_plan_skips_assignments_that_change_nothing() -> None:
@@ -316,6 +339,7 @@ def test_undo_lists_each_change_the_other_way_round() -> None:
             "from_category": "Groceries",
             "to_category_id": "c-fun",
             "to_category": "Leisure",
+            "approved": False,
         }
     ]
     assert not plan.conflicts

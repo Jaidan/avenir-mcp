@@ -115,8 +115,15 @@ reason = "No update avenir-mcp sends carries an amount."
 [[rule]]
 rule = "SaveTransactionWithOptionalFields.approved: If not supplied, transaction will be unapproved by default."
 status = "tested"
-tests = ["tests/test_client.py::test_create_transactions_can_leave_them_for_review"]
-# create_transactions always sends approved, so the default never decides.
+tests = [
+  "tests/test_client.py::test_create_transactions_can_leave_them_for_review",
+  "tests/test_client_approval.py::test_category_update_keeps_each_transactions_approval",
+  "tests/test_client_approval.py::test_split_update_keeps_the_transactions_approval",
+  "tests/test_client_approval.py::test_cleared_update_keeps_each_transactions_approval",
+  "tests/test_client_approval.py::test_flag_update_keeps_each_transactions_approval",
+]
+# create_transactions always sends approved; every update sends the approval the
+# transaction should keep, because YNAB unapproves an update that leaves it out.
 
 [[rule]]
 rule = "SaveTransactionWithOptionalFields.category_id: Credit Card Payment categories are not permitted and will be ignored if supplied."

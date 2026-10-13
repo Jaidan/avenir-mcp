@@ -157,7 +157,8 @@ async def _undo_reconcile(
     refused = await _confirm_undo(ctx, plan_id, entry, question, confirmation)
     if refused is not None:
         return refused
-    await client.set_transactions_cleared(plan_id, reverted, "cleared")
+    keeps = {tx_id: bool(statuses[tx_id].get("approved")) for tx_id in reverted}
+    await client.set_transactions_cleared(plan_id, reverted, "cleared", keeps)
     if adjustment:
         await client.delete_transaction(plan_id, adjustment)
     book.mark_undone(entry.operation_id)
@@ -318,7 +319,8 @@ async def _undo_flag(
         What was done, the flags changed since as conflicts, or what to return instead when
         the user did not agree.
     """
-    now = {tx["id"]: flags.current(tx) for tx in await client.get_transactions(plan_id)}
+    transactions = await client.get_transactions(plan_id)
+    now = {tx["id"]: flags.current(tx) for tx in transactions}
     changes = entry.details["changes"]
     back = [
         c for c in changes if c["transaction_id"] in now and now[c["transaction_id"]] == c["to"]
@@ -331,7 +333,8 @@ async def _undo_flag(
     refused = await _confirm_undo(ctx, plan_id, entry, question, confirmation)
     if refused is not None:
         return refused
-    await client.set_flags(plan_id, [(c["transaction_id"], c["from"]) for c in back])
+    keeps = {tx["id"]: bool(tx.get("approved")) for tx in transactions}
+    await client.set_flags(plan_id, [(c["transaction_id"], c["from"]) for c in back], keeps)
     book.mark_undone(entry.operation_id)
     return result_of("applied", "Flags restored.", writes.Plan(conflicts=moved))
 

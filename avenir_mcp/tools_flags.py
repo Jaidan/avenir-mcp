@@ -111,7 +111,8 @@ async def flag_transactions(
     """
     logger.info("Tool called: flag_transactions(n=%d)", len(flags))
     try:
-        plan = plan_flags(await client.get_transactions(plan_id), flags)
+        transactions = await client.get_transactions(plan_id)
+        plan = plan_flags(transactions, flags)
     except ValueError as error:
         raise ToolError(str(error)) from error
     result = FlagResult(
@@ -131,7 +132,8 @@ async def flag_transactions(
     stop = await gate(ctx, plan_id, subject, question(plan.changes, head), confirmation)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
-    await client.set_flags(plan_id, [(c.transaction_id, c.to_color) for c in plan.changes])
+    keeps = {tx["id"]: bool(tx.get("approved")) for tx in transactions}
+    await client.set_flags(plan_id, [(c.transaction_id, c.to_color) for c in plan.changes], keeps)
     operation_id = journal.Journal(journal.default_path()).record(
         plan_id,
         "flag",

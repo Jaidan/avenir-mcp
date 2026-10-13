@@ -313,7 +313,9 @@ async def write_plan(
         )
         return result_of("confirmation_required", message, plan, confirmation=decision), None
     await client.set_transaction_categories(
-        plan_id, [(c.transaction_id, c.to_category_id) for c in plan.changes]
+        plan_id,
+        [(c.transaction_id, c.to_category_id) for c in plan.changes],
+        {c.transaction_id: c.approved for c in plan.changes},
     )
     moves = [
         journal.Move(

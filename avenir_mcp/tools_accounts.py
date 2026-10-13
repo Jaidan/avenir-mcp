@@ -157,6 +157,7 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
     stop = await gate(ctx, plan_id, subject, question, confirmation)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
+    keeps = {tx["id"]: bool(tx.get("approved")) for tx in transactions}
     adjustment_id = None
     if difference:
         inflow = next(
@@ -182,7 +183,8 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
         )
         adjustment_id = created["transaction_ids"][0]
         to_reconcile.append(adjustment_id)
-    await client.set_transactions_cleared(plan_id, to_reconcile, "reconciled")
+        keeps[adjustment_id] = True
+    await client.set_transactions_cleared(plan_id, to_reconcile, "reconciled", keeps)
     operation_id = journal.Journal(journal.default_path()).record(
         plan_id,
         "reconcile",

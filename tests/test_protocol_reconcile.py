@@ -41,6 +41,7 @@ class _Bank:
         ]
         self.created: list[dict[str, Any]] = []
         self.deleted: list[str] = []
+        self.sent_approved: list[dict[str, bool]] = []
 
     @staticmethod
     def _tx(tx_id: str, amount: int, cleared: str) -> dict[str, Any]:
@@ -51,6 +52,7 @@ class _Bank:
             "account_id": "acc",
             "payee_name": "Market",
             "date": "2026-09-11",
+            "approved": True,
             "deleted": False,
         }
 
@@ -69,12 +71,14 @@ class _Bank:
         return {"created": 1, "transaction_ids": ["adj"], "duplicate_import_ids": []}
 
     async def set_transactions_cleared(
-        self, _budget_id: str, tx_ids: list[str], cleared: str
+        self, _budget_id: str, tx_ids: list[str], cleared: str, approved: dict[str, bool]
     ) -> list[str]:
-        """Apply a cleared status."""
+        """Apply a cleared status, and the approval sent with it."""
+        self.sent_approved.append(approved)
         for tx in self.transactions:
             if tx["id"] in tx_ids:
                 tx["cleared"] = cleared
+                tx["approved"] = approved[tx["id"]]
         return tx_ids
 
     async def delete_transaction(self, _budget_id: str, tx_id: str) -> None:
@@ -154,6 +158,25 @@ def test_adjustment_is_created_on_request_then_undone(bank: _Bank) -> None:
     assert undo["status"] == "applied"
     assert bank.deleted == ["adj"]
     assert bank.status("t2") == "cleared"
+
+
+def test_reconcile_account_keeps_the_transaction_approved(bank: _Bank) -> None:
+    """Reconciling sends each transaction's approval, and the adjustment's as approved."""
+    bank.transactions[1]["approved"] = False
+    call("reconcile_account", _args(80.0, adjust=True), accept)
+    sent = bank.sent_approved[0]
+    assert (sent["t2"], sent["adj"]) == (False, True)
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert bank.sent_approved[-1]["t2"] is False
+    approved = {tx["id"]: tx["approved"] for tx in bank.transactions}
+    assert approved == {"t1": True, "t2": False, "t3": True, "adj": True}
+
+
+def test_undo_of_a_reconcile_keeps_the_transaction_approved(bank: _Bank) -> None:
+    """Putting a reconciled transaction back to cleared does not unapprove it."""
+    call("reconcile_account", _args(70.0), accept)
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert bank.sent_approved[-1] == {"t2": True}
 
 
 def test_nothing_to_reconcile(bank: _Bank) -> None:

@@ -785,13 +785,17 @@ async def approve_transactions(plan_id: str, tx_ids: list[str]) -> dict[str, int
 
 
 async def set_transaction_categories(
-    plan_id: str, moves: list[tuple[str, str | None]]
+    plan_id: str, moves: list[tuple[str, str | None]], approved: dict[str, bool]
 ) -> list[str]:
     """Give each transaction a category in one bulk request.
+
+    YNAB unapproves a transaction updated without `approved`, so each one is sent
+    with the approval it should keep.
 
     Args:
         plan_id: YNAB plan id or "last-used".
         moves: (transaction_id, category_id) pairs; None clears the category.
+        approved: Approval to send for each transaction id.
 
     Returns:
         The ids of the transactions YNAB updated.
@@ -799,19 +803,29 @@ async def set_transaction_categories(
     if not moves:
         return []
     logger.info("Setting the category of %d transactions", len(moves))
-    body = {"transactions": [{"id": tx_id, "category_id": cat} for tx_id, cat in moves]}
+    body = {
+        "transactions": [
+            {"id": tx_id, "category_id": cat, "approved": approved[tx_id]} for tx_id, cat in moves
+        ]
+    }
     data = await _patch(f"/plans/{plan_id}/transactions", body)
     return list(data["data"].get("transaction_ids", []))
 
 
-async def split_transaction(plan_id: str, tx_id: str, lines: list[dict[str, Any]]) -> None:
+async def split_transaction(
+    plan_id: str, tx_id: str, lines: list[dict[str, Any]], approved: bool
+) -> None:
     """Split one transaction across categories; YNAB's API cannot change the lines afterwards.
+
+    YNAB unapproves a transaction updated without `approved`, so it is sent with the
+    approval the transaction should keep.
 
     Args:
         plan_id: YNAB plan id or "last-used".
         tx_id: Transaction UUID; it must not be split already.
         lines: {amount (currency units), category_id, memo or None}, adding up to the
             transaction's amount.
+        approved: Approval to send with the split.
     """
     subtransactions = []
     for line in lines:
@@ -824,7 +838,14 @@ async def split_transaction(plan_id: str, tx_id: str, lines: list[dict[str, Any]
         subtransactions.append(sub)
     logger.info("Splitting transaction %s into %d lines", tx_id, len(subtransactions))
     body = {
-        "transactions": [{"id": tx_id, "category_id": None, "subtransactions": subtransactions}]
+        "transactions": [
+            {
+                "id": tx_id,
+                "category_id": None,
+                "approved": approved,
+                "subtransactions": subtransactions,
+            }
+        ]
     }
     await _patch(f"/plans/{plan_id}/transactions", body)
 
@@ -905,13 +926,19 @@ async def rename_payee(plan_id: str, payee_id: str, name: str) -> dict[str, Any]
     return data["data"]["payee"]  # type: ignore[no-any-return]
 
 
-async def set_transactions_cleared(plan_id: str, tx_ids: list[str], cleared: str) -> list[str]:
+async def set_transactions_cleared(
+    plan_id: str, tx_ids: list[str], cleared: str, approved: dict[str, bool]
+) -> list[str]:
     """Set the cleared status of transactions in one bulk request.
+
+    YNAB unapproves a transaction updated without `approved`, so each one is sent
+    with the approval it should keep.
 
     Args:
         plan_id: YNAB plan id or "last-used".
         tx_ids: Transaction UUIDs to update.
         cleared: "cleared", "uncleared" or "reconciled".
+        approved: Approval to send for each transaction id.
 
     Returns:
         The ids of the transactions YNAB updated.
@@ -919,17 +946,27 @@ async def set_transactions_cleared(plan_id: str, tx_ids: list[str], cleared: str
     if not tx_ids:
         return []
     logger.info("Marking %d transactions %s", len(tx_ids), cleared)
-    body = {"transactions": [{"id": tx_id, "cleared": cleared} for tx_id in tx_ids]}
+    body = {
+        "transactions": [
+            {"id": tx_id, "cleared": cleared, "approved": approved[tx_id]} for tx_id in tx_ids
+        ]
+    }
     data = await _patch(f"/plans/{plan_id}/transactions", body)
     return list(data["data"].get("transaction_ids", []))
 
 
-async def set_flags(plan_id: str, changes: list[tuple[str, str | None]]) -> list[str]:
+async def set_flags(
+    plan_id: str, changes: list[tuple[str, str | None]], approved: dict[str, bool]
+) -> list[str]:
     """Set or remove the flag of transactions in one bulk request.
+
+    YNAB unapproves a transaction updated without `approved`, so each one is sent
+    with the approval it should keep.
 
     Args:
         plan_id: YNAB plan id or "last-used".
         changes: (transaction id, colour) pairs; None removes the flag.
+        approved: Approval to send for each transaction id.
 
     Returns:
         The ids of the transactions YNAB updated.
@@ -937,7 +974,12 @@ async def set_flags(plan_id: str, changes: list[tuple[str, str | None]]) -> list
     if not changes:
         return []
     logger.info("Setting the flag of %d transactions", len(changes))
-    body = {"transactions": [{"id": tx_id, "flag_color": color} for tx_id, color in changes]}
+    body = {
+        "transactions": [
+            {"id": tx_id, "flag_color": color, "approved": approved[tx_id]}
+            for tx_id, color in changes
+        ]
+    }
     data = await _patch(f"/plans/{plan_id}/transactions", body)
     return list(data["data"].get("transaction_ids", []))
 

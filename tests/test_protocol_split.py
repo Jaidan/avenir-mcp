@@ -61,7 +61,17 @@ def test_split_is_previewed_then_applied_with_the_code(ynab: AsyncMock) -> None:
             {"amount": -81.15, "category_id": "c-food", "memo": None},
             {"amount": -5.25, "category_id": "c-home", "memo": "Dish soap"},
         ],
+        approved=False,
     )
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_split_transaction_keeps_the_transaction_approved(ynab: AsyncMock, approved: bool) -> None:
+    """An approved transaction is sent approved, so YNAB does not unapprove it."""
+    tx = _TX | {"approved": approved}
+    with patch("avenir_mcp.client.get_transactions", AsyncMock(return_value=[tx])):
+        call("split_transaction", _args(), accept)
+    assert ynab.call_args.kwargs == {"approved": approved}
 
 
 def test_a_transfer_to_a_tracking_account_goes_through_the_same_steps(ynab: AsyncMock) -> None:

@@ -232,8 +232,12 @@ async def split_transaction(
     stop = await gate(ctx, plan_id, subject, _question(plan), confirmation)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
+    approved = any(tx["id"] == transaction_id and tx.get("approved") for tx in transactions)
     await client.split_transaction(
-        plan_id, transaction_id, [line.model_dump(mode="json") for line in lines]
+        plan_id,
+        transaction_id,
+        [line.model_dump(mode="json") for line in lines],
+        approved=approved,
     )
     return result.model_copy(update={"message": f"Split. {_UNDO_IN_YNAB}"})
 

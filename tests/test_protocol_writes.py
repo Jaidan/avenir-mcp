@@ -46,20 +46,23 @@ class _Budget:
     def __init__(self) -> None:
         self.transactions = _txs()
         self.patches: list[list[tuple[str, str | None]]] = []
+        self.sent_approved: list[dict[str, bool]] = []
 
     async def get_transactions(self, _budget_id: str) -> list[dict[str, Any]]:
         """Return a copy of the transactions, as YNAB would."""
         return [dict(tx) for tx in self.transactions]
 
     async def set_transaction_categories(
-        self, _budget_id: str, moves: list[tuple[str, str | None]]
+        self, _budget_id: str, moves: list[tuple[str, str | None]], approved: dict[str, bool]
     ) -> list[str]:
-        """Record the PATCH and apply it to the fake budget."""
+        """Record the PATCH and apply it to the fake budget, approval included."""
         self.patches.append(moves)
+        self.sent_approved.append(approved)
         for tx_id, category_id in moves:
             for tx in self.transactions:
                 if tx["id"] == tx_id:
                     tx["category_id"] = category_id
+                    tx["approved"] = approved[tx_id]
         return [tx_id for tx_id, _ in moves]
 
 
@@ -193,6 +196,23 @@ def test_undo_restores_previous_categories(budget: _Budget) -> None:
     again = call("undo_operation", {"plan_id": "b1"}, accept)
     assert again.is_error
     assert "Nothing to undo" in again.content[0].text
+
+
+def test_apply_categories_keeps_the_transaction_approved(budget: _Budget) -> None:
+    """YNAB unapproves an update that omits `approved`: an approved transaction stays so."""
+    budget.transactions[0]["approved"] = True
+    call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}, accept)
+    assert budget.sent_approved == [{"t1": True}]
+    assert budget.transactions[0]["approved"] is True
+
+
+def test_undo_keeps_the_transaction_approved(budget: _Budget) -> None:
+    """Undoing a categorisation sends the approval the transaction has."""
+    budget.transactions[0]["approved"] = True
+    call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}, accept)
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert budget.sent_approved[-1] == {"t1": True}
+    assert budget.transactions[0]["approved"] is True
 
 
 def test_undo_leaves_alone_what_was_changed_since(budget: _Budget) -> None:

@@ -10,7 +10,8 @@
       "from_category_id": "cat-groceries",
       "from_category": "Groceries",
       "to_category_id": "cat-phone",
-      "to_category": "Phone"
+      "to_category": "Phone",
+      "approved": true
     },
     {
       "transaction_id": "tx-049",
@@ -20,7 +21,8 @@
       "from_category_id": "cat-transport",
       "from_category": "Transport",
       "to_category_id": "cat-restaurants",
-      "to_category": "Restaurants"
+      "to_category": "Restaurants",
+      "approved": true
     }
   ],
   "unchanged_count": 0,

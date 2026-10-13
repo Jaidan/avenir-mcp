@@ -58,6 +58,8 @@ class Change(Model):
     """Category id after; null for none."""
     to_category: str | None
     """Category name after; null for none."""
+    approved: bool
+    """The approval sent with the change: the transaction's own."""
 
 
 class Plan(Model):
@@ -166,6 +168,7 @@ def plan_categorization(
                 from_category=untrusted(names.get(current)) or None,
                 to_category_id=category_id,
                 to_category=untrusted(names[category_id]),
+                approved=bool(tx.get("approved")),
             )
         )
     return Plan(changes=changes, unchanged_count=unchanged)
@@ -213,6 +216,7 @@ def plan_undo(
                 from_category=untrusted(names.get(gave)) or None,
                 to_category_id=before,
                 to_category=untrusted(names.get(before)) if before else None,
+                approved=bool(tx.get("approved")),
             )
         )
     return Plan(changes=changes, conflicts=conflicts)

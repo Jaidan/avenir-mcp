@@ -107,6 +107,54 @@ def test_plan_skips_assignments_that_change_nothing() -> None:
     assert plan.unchanged_count == 1
 
 
+def test_plan_can_clear_a_category() -> None:
+    """A null category takes the category away: the change goes to none."""
+    plan = writes.plan_categorization(
+        [_tx("t1", "c-food")],
+        _CATEGORIES,
+        [writes.Assignment(transaction_id="t1", category_id=None)],
+    )
+    assert [(c.from_category, c.to_category_id, c.to_category) for c in plan.changes] == [
+        ("Groceries", None, None)
+    ]
+
+
+def test_clearing_an_uncategorised_transaction_changes_nothing() -> None:
+    """No category already counts as unchanged, not as an error."""
+    plan = writes.plan_categorization(
+        [_tx("t1")],
+        _CATEGORIES,
+        [writes.Assignment(transaction_id="t1", category_id=None)],
+    )
+    assert not plan.changes
+    assert plan.unchanged_count == 1
+
+
+def test_clearing_with_approve_approves_a_row_with_no_category() -> None:
+    """With approve, an uncategorised row asked to be cleared is listed to approve."""
+    plan = writes.plan_categorization(
+        [_tx("t1", approved=False), _tx("t2", "c-food", approved=False)],
+        _CATEGORIES,
+        [
+            writes.Assignment(transaction_id="t1", category_id=None),
+            writes.Assignment(transaction_id="t2", category_id=None),
+        ],
+        approve=True,
+    )
+    assert [c.transaction_id for c in plan.to_approve] == ["t1"]
+    assert [(c.transaction_id, c.approved) for c in plan.changes] == [("t2", True)]
+
+
+def test_clearing_still_refuses_a_transfer() -> None:
+    """Clearing keeps the checks a category would meet: a transfer takes none."""
+    with pytest.raises(ValueError, match="transfer"):
+        writes.plan_categorization(
+            [_tx("t1", "c-food", transfer_account_id="acc2")],
+            _CATEGORIES,
+            [writes.Assignment(transaction_id="t1", category_id=None)],
+        )
+
+
 def test_plan_rejects_an_unknown_transaction() -> None:
     """An id that is not in the plan is refused, naming it."""
     with pytest.raises(ValueError) as refusal:

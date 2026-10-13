@@ -224,6 +224,19 @@ def test_apply_categories_keeps_the_transaction_approved(budget: _Budget) -> Non
     assert budget.transactions[0]["approved"] is True
 
 
+def test_undo_gives_a_cleared_category_back(budget: _Budget) -> None:
+    """Clearing sends a null category; undo puts the previous category back."""
+    budget.transactions[0]["category_id"] = "c-food"
+    clear = [{"transaction_id": "t1", "category_id": None}]
+    data = call("apply_categories", {"plan_id": "b1", "assignments": clear}, accept)
+    assert data.structured_content["status"] == "applied"
+    assert budget.patches == [[("t1", None)]]
+    assert budget.transactions[0]["category_id"] is None
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert budget.patches[-1] == [("t1", "c-food")]
+    assert budget.transactions[0]["category_id"] == "c-food"
+
+
 def test_undo_keeps_the_transaction_approved(budget: _Budget) -> None:
     """Undoing a categorisation sends the approval the transaction has."""
     budget.transactions.append(budget.transactions[0] | {"id": "t2", "approved": False})

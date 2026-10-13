@@ -120,7 +120,8 @@ async def apply_categories(
 
     Args:
         plan_id: YNAB plan id or 'last-used'.
-        assignments: {transaction_id, category_id} pairs, one per transaction.
+        assignments: {transaction_id, category_id} pairs, one per transaction; a null
+            category_id makes it uncategorized again.
         ctx: The MCP context, used to ask the user.
         approve: Also approve them (YNAB's "reviewed"), as YNAB does when you categorise there.
             undo_operation restores the categories only.

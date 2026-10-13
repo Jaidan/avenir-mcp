@@ -35,8 +35,8 @@ class Assignment(Model):
 
     transaction_id: str
     """Transaction to categorise, from suggest_categories."""
-    category_id: str
-    """Category to give it."""
+    category_id: str | None
+    """Category to give it; null takes its category away (back to uncategorized)."""
 
 
 class Change(Model):
@@ -181,12 +181,14 @@ def _assignable(
     return tx
 
 
-def _row(tx: dict[str, Any], category_id: str, names: dict[str, str], approved: bool) -> Change:
+def _row(
+    tx: dict[str, Any], category_id: str | None, names: dict[str, str], approved: bool
+) -> Change:
     """Describe a transaction moving from its category to another.
 
     Args:
         tx: The transaction.
-        category_id: The category it is given.
+        category_id: The category it is given; None takes its category away.
         names: The plan's category names by id.
         approved: The approval to send with it.
 
@@ -202,7 +204,7 @@ def _row(tx: dict[str, Any], category_id: str, names: dict[str, str], approved: 
         from_category_id=current,
         from_category=untrusted(names[current]) if current in names else None,
         to_category_id=category_id,
-        to_category=untrusted(names[category_id]),
+        to_category=untrusted(names[category_id]) if category_id else None,
         approved=approved,
     )
 
@@ -242,7 +244,8 @@ def plan_categorization(
     unchanged = 0
     for assignment in assignments:
         tx = _assignable(assignment.transaction_id, by_id, seen, off_budget)
-        _check_category(assignment.category_id, names, refused)
+        if assignment.category_id is not None:
+            _check_category(assignment.category_id, names, refused)
         change = _row(
             tx, assignment.category_id, names, approved=approve or bool(tx.get("approved"))
         )

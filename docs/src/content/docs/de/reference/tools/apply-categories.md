@@ -39,7 +39,7 @@ transactions stay approved. Amounts are in currency units.
 | Name | Typ | Pflicht | Standard | Beschreibung |
 |---|---|---|---|---|
 | `plan_id` | string | ja | — | YNAB plan id or 'last-used'. |
-| `assignments` | array of object | ja | — | {transaction_id, category_id} pairs, one per transaction. |
+| `assignments` | array of object | ja | — | {transaction_id, category_id} pairs, one per transaction; a null category_id makes it uncategorized again. |
 | `approve` | boolean | nein | `false` | Also approve them (YNAB's "reviewed"), as YNAB does when you categorise there. undo_operation restores the categories only. |
 | `confirmation` | string \| null | nein | `null` | Code from a previous "confirmation_required" result. |
 

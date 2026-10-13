@@ -190,7 +190,19 @@ def test_a_modern_answer_applies_the_same_assignments_in_another_order(ynab: lis
     result = _write(_answered(request), _approving(txs, slice(None, None, -1)))
     assert result.status == "applied"
     assert ynab == [("categorise", [("t1", "c-food")], {"t1": True})]
-    assert [c.transaction_id for c in result.approvals] == ["t2"]
+    assert result.approvals == []
+
+
+def test_write_plan_claims_no_approval_it_did_not_make(ynab: list[Any]) -> None:
+    """Rows only to approve are the caller's: write_plan reports no approval and no undo."""
+    plan = _approving([_tx("t1", "c-food"), _tx("t2", "c-fun")])
+    request = _write(_Ctx("2026-07-28"), plan)
+    result = _write(_answered(request), plan)
+    assert result.status == "applied"
+    assert result.message == "No category changed."
+    assert result.approvals == []
+    assert result.operation_id is None
+    assert ynab == []
 
 
 def test_a_modern_answer_is_refused_once_a_row_to_approve_changes(ynab: list[Any]) -> None:

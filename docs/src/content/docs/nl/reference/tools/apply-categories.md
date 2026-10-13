@@ -60,7 +60,7 @@ transactions stay approved. Amounts are in currency units.
 | `changes[].to_category` | string \| null | Category name after; null for none. |
 | `changes[].approved` | boolean | The approval sent with the change: the transaction's own, or true when the operation approves too. |
 | `unchanged_count` | integer | Assignments that would change nothing and were skipped. |
-| `approvals` | array of object | Transactions already in the right category, approved by the same call (approve=true). |
+| `approvals` | array of object | Transactions already in the right category, approved by the same call (approve=true); in a preview, the ones it would approve. |
 | `approvals[].transaction_id` | string | YNAB id of the transaction. |
 | `approvals[].date` | string | Date, YYYY-MM-DD. |
 | `approvals[].amount` | number | Amount in currency units. |
@@ -134,12 +134,12 @@ Antwoord op het demobudget:
 
 ## Fouten
 
+- `Approving failed ({error}): {outcome}{categories}.`
 - `Transaction {tx_id} is assigned twice: keep one assignment.`
 - `Transaction {tx_id} is not in this plan: use the transaction_id values returned by suggest_categories.`
 - `Transaction {tx_id} is split across categories: change its lines in YNAB.`
 - `Transaction {tx_id} is on an off-budget account: YNAB gives it no category.`
 - `Transaction {tx_id} is a transfer between accounts: YNAB gives it no category.`
-- `Approving failed ({error}): {outcome}{categories}.`
 - `Category {category_id} is YNAB's internal Uncategorized: choose a real category.`
 - `Category {category_id} is not in this plan: use a category_id from the categories returned by suggest_categories.`
 - `Category {category_id} pays a credit card: YNAB ignores it on a transaction. Choose the category of what was paid for.`

@@ -136,7 +136,78 @@ def _check_category(
         raise ValueError(f"Category {category_id} {CARD_CATEGORY}")
 
 
-def plan_categorization(  # pylint: disable=too-many-locals
+def _assignable(
+    tx_id: str,
+    by_id: dict[str, dict[str, Any]],
+    seen: set[str],
+    off_budget: set[str] | frozenset[str],
+) -> dict[str, Any]:
+    """Find a transaction that can take a category, once.
+
+    Args:
+        tx_id: The transaction asked for.
+        by_id: The plan's transactions by id.
+        seen: Ids already assigned; this one is added.
+        off_budget: Ids of the tracking accounts.
+
+    Returns:
+        The transaction.
+
+    Raises:
+        ValueError: If it is assigned twice, unknown, split, on an off-budget account,
+            or a transfer.
+    """
+    if tx_id in seen:
+        raise ValueError(f"Transaction {tx_id} is assigned twice: keep one assignment.")
+    seen.add(tx_id)
+    tx = by_id.get(tx_id)
+    if tx is None:
+        raise ValueError(
+            f"Transaction {tx_id} is not in this plan: "
+            "use the transaction_id values returned by suggest_categories."
+        )
+    if tx.get("subtransactions"):
+        raise ValueError(
+            f"Transaction {tx_id} is split across categories: change its lines in YNAB."
+        )
+    if tx.get("account_id") in off_budget:
+        raise ValueError(
+            f"Transaction {tx_id} is on an off-budget account: YNAB gives it no category."
+        )
+    if tx.get("transfer_account_id"):
+        raise ValueError(
+            f"Transaction {tx_id} is a transfer between accounts: YNAB gives it no category."
+        )
+    return tx
+
+
+def _row(tx: dict[str, Any], category_id: str, names: dict[str, str], approved: bool) -> Change:
+    """Describe a transaction moving from its category to another.
+
+    Args:
+        tx: The transaction.
+        category_id: The category it is given.
+        names: The plan's category names by id.
+        approved: The approval to send with it.
+
+    Returns:
+        The change; from and to are the same category when it only gets approved.
+    """
+    current = tx.get("category_id")
+    return Change(
+        transaction_id=tx["id"],
+        date=tx["date"],
+        amount=milliunit_to_amount(tx["amount"]),
+        payee=untrusted(tx.get("payee_name")),
+        from_category_id=current,
+        from_category=untrusted(names[current]) if current in names else None,
+        to_category_id=category_id,
+        to_category=untrusted(names[category_id]),
+        approved=approved,
+    )
+
+
+def plan_categorization(
     transactions: list[dict[str, Any]],
     categories: list[dict[str, Any]],
     assignments: list[Assignment],
@@ -170,46 +241,17 @@ def plan_categorization(  # pylint: disable=too-many-locals
     to_approve: list[Change] = []
     unchanged = 0
     for assignment in assignments:
-        tx_id, category_id = assignment.transaction_id, assignment.category_id
-        if tx_id in seen:
-            raise ValueError(f"Transaction {tx_id} is assigned twice: keep one assignment.")
-        seen.add(tx_id)
-        tx = by_id.get(tx_id)
-        if tx is None:
-            raise ValueError(
-                f"Transaction {tx_id} is not in this plan: "
-                "use the transaction_id values returned by suggest_categories."
-            )
-        _check_category(category_id, names, refused)
-        if tx.get("subtransactions"):
-            raise ValueError(
-                f"Transaction {tx_id} is split across categories: change its lines in YNAB."
-            )
-        if tx.get("account_id") in off_budget:
-            raise ValueError(
-                f"Transaction {tx_id} is on an off-budget account: YNAB gives it no category."
-            )
-        if tx.get("transfer_account_id"):
-            raise ValueError(
-                f"Transaction {tx_id} is a transfer between accounts: YNAB gives it no category."
-            )
-        current = tx.get("category_id")
-        approved = bool(tx.get("approved"))
-        if current == category_id and (approved or not approve):
-            unchanged += 1
-            continue
-        change = Change(
-            transaction_id=tx_id,
-            date=tx["date"],
-            amount=milliunit_to_amount(tx["amount"]),
-            payee=untrusted(tx.get("payee_name")),
-            from_category_id=current,
-            from_category=untrusted(names.get(current)) or None,
-            to_category_id=category_id,
-            to_category=untrusted(names[category_id]),
-            approved=approve or approved,
+        tx = _assignable(assignment.transaction_id, by_id, seen, off_budget)
+        _check_category(assignment.category_id, names, refused)
+        change = _row(
+            tx, assignment.category_id, names, approved=approve or bool(tx.get("approved"))
         )
-        (to_approve if current == category_id else changes).append(change)
+        if change.from_category_id != change.to_category_id:
+            changes.append(change)
+        elif approve and not tx.get("approved"):
+            to_approve.append(change)
+        else:
+            unchanged += 1
     return Plan(changes=changes, unchanged_count=unchanged, to_approve=to_approve, approve=approve)
 
 

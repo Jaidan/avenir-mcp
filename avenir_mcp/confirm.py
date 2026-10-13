@@ -64,7 +64,9 @@ class WriteResult(Model):
     unchanged_count: int
     """Assignments that would change nothing and were skipped."""
     approvals: list[writes.Change]
-    """Transactions already in the right category, approved by the same call (approve=true)."""
+    """Transactions already in the right category, approved by the same call (approve=true);
+    in a preview, the ones it would approve.
+    """
     conflicts: list[str]
     """Ids left alone because they changed since the operation (undo only)."""
     confirmation: str | None
@@ -122,7 +124,7 @@ def describe(plan: writes.Plan, action: str) -> str:
     every = [*plan.changes, *plan.to_approve]
     lines = [
         f"- {c.date} {untrusted(c.payee)} {c.amount:.2f}: {row}"
-        for c, row in zip(every[:20], rows, strict=False)
+        for c, row in zip(every[:20], rows[:20], strict=True)
     ]
     more = len(every) - len(lines)
     if more > 0:
@@ -295,8 +297,9 @@ async def write_plan(
 ) -> tuple[WriteResult | types.InputRequiredResult, str | None]:
     """Confirm a recategorisation plan, apply it and journal it.
 
-    The categories are written and journaled; the transactions only approved
-    (`plan.to_approve`) are the caller's to approve once this returns "applied".
+    The result covers only what this does: the categories and the journal. When it
+    is "applied", the caller approves `plan.to_approve` and then reports the
+    approvals itself; until then the result lists none.
 
     Args:
         ctx: The MCP context of the call.
@@ -307,7 +310,7 @@ async def write_plan(
 
     Returns:
         The result (or the input request to return), and the new operation's id when
-        categories were changed.
+        categories were changed; None when there were none to change.
     """
     if not plan.changes and not plan.to_approve:
         message = "Nothing to change." + (
@@ -329,14 +332,12 @@ async def write_plan(
             "arguments and this confirmation code (valid 10 minutes)."
         )
         return result_of("confirmation_required", message, plan, confirmation=decision), None
-    operation_id = await _recategorise(plan_id, plan.changes) if plan.changes else None
-    if operation_id is None:
-        message = "Approved. An approval cannot be undone with undo_operation."
-    else:
-        message = f"Applied. undo_operation with operation_id {operation_id} reverts it."
-        if plan.approve:
-            message += " It restores the categories only: the transactions stay approved."
-    return result_of("applied", message, plan, operation_id=operation_id), operation_id
+    done = plan.model_copy(update={"to_approve": []})
+    if not plan.changes:
+        return result_of("applied", "No category changed.", done), None
+    operation_id = await _recategorise(plan_id, plan.changes)
+    message = f"Applied. undo_operation with operation_id {operation_id} reverts it."
+    return result_of("applied", message, done, operation_id=operation_id), operation_id
 
 
 async def _recategorise(plan_id: str, changes: list[writes.Change]) -> str:

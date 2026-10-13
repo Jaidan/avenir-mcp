@@ -147,9 +147,16 @@ async def apply_categories(
         raise ToolError(str(error)) from error
     action = "Recategorise and approve" if approve else "Recategorise"
     result, operation_id = await write_plan(ctx, plan_id, plan, action, confirmation)
-    if isinstance(result, WriteResult) and result.status == "applied":
-        await _approve(plan_id, plan.to_approve, operation_id)
-    return result
+    if not isinstance(result, WriteResult) or result.status != "applied" or not approve:
+        return result
+    await _approve(plan_id, plan.to_approve, operation_id)
+    if operation_id is None:
+        message = "Approved. An approval cannot be undone with undo_operation."
+    else:
+        message = (
+            f"{result.message} It restores the categories only: the transactions stay approved."
+        )
+    return result.model_copy(update={"message": message, "approvals": plan.to_approve})
 
 
 async def _approve(plan_id: str, rows: list[writes.Change], operation_id: str | None) -> None:
@@ -170,17 +177,19 @@ async def _approve(plan_id: str, rows: list[writes.Change], operation_id: str | 
         await client.approve_transactions(plan_id, [c.transaction_id for c in rows])
     except RuntimeError as error:
         unknown = isinstance(error, retry.YnabUnavailable)
-        outcome = (
-            "the approval may or may not have applied: check in YNAB"
-            if unknown
-            else "nothing was approved"
-        )
-        categories = (
-            ("" if unknown else " and nothing was changed")
-            if operation_id is None
-            else f"; the categories were changed: undo_operation with operation_id "
-            f"{operation_id} reverts them"
-        )
+        if unknown:
+            outcome = "the approval may or may not have applied: check in YNAB"
+        else:
+            outcome = "nothing was approved"
+        if operation_id is not None:
+            categories = (
+                f"; the categories were changed: undo_operation with operation_id "
+                f"{operation_id} reverts them"
+            )
+        elif unknown:
+            categories = ""
+        else:
+            categories = " and nothing was changed"
         raise ToolError(f"Approving failed ({error}): {outcome}{categories}.") from error
 
 

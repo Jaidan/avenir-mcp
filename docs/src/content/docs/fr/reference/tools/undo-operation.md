@@ -55,7 +55,7 @@ Confirmation works as for apply_categories.
 | `changes[].to_category` | string \| null | Category name after; null for none. |
 | `changes[].approved` | boolean | The approval sent with the change: the transaction's own, or true when the operation approves too. |
 | `unchanged_count` | integer | Assignments that would change nothing and were skipped. |
-| `approvals` | array of object | Transactions already in the right category, approved by the same call (approve=true). |
+| `approvals` | array of object | Transactions already in the right category, approved by the same call (approve=true); in a preview, the ones it would approve. |
 | `approvals[].transaction_id` | string | YNAB id of the transaction. |
 | `approvals[].date` | string | Date, YYYY-MM-DD. |
 | `approvals[].amount` | number | Amount in currency units. |

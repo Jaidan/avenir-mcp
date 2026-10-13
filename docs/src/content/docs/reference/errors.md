@@ -64,12 +64,12 @@ Any tool that reaches YNAB can return YNAB's own error: `Error calling tool '<to
 
 ## [`apply_categories`](/avenir-mcp/reference/tools/apply-categories/)
 
+- `Approving failed ({error}): {outcome}{categories}.`
 - `Transaction {tx_id} is assigned twice: keep one assignment.`
 - `Transaction {tx_id} is not in this plan: use the transaction_id values returned by suggest_categories.`
 - `Transaction {tx_id} is split across categories: change its lines in YNAB.`
 - `Transaction {tx_id} is on an off-budget account: YNAB gives it no category.`
 - `Transaction {tx_id} is a transfer between accounts: YNAB gives it no category.`
-- `Approving failed ({error}): {outcome}{categories}.`
 - `Category {category_id} is YNAB's internal Uncategorized: choose a real category.`
 - `Category {category_id} is not in this plan: use a category_id from the categories returned by suggest_categories.`
 - `Category {category_id} pays a credit card: YNAB ignores it on a transaction. Choose the category of what was paid for.`

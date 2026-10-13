@@ -12,7 +12,7 @@ from fastmcp import Context
 from fastmcp.exceptions import ToolError
 from mcp.types import InputRequiredResult
 
-from avenir_mcp import client, flags, journal, targets, writes
+from avenir_mcp import client, flags, journal, retry, targets, writes
 from avenir_mcp.app import WRITE_TAG, mcp
 from avenir_mcp.confirm import (
     WriteResult,
@@ -233,14 +233,39 @@ async def _restore(
         try:
             await client.set_category_budgeted(plan_id, month, change["category_id"], previous)
         except RuntimeError as error:
-            restored = ", ".join(names[c["category_id"]] for c in changes[:index]) or "none"
-            left = ", ".join(names[c["category_id"]] for c in changes[index:])
-            raise ToolError(
-                f"Undo stopped: setting {names[change['category_id']]} back failed ({error}). "
-                f"Restored: {restored}. Not restored: {left}. The operation is still in "
-                "effect: undo_operation again restores the rest and lists those already "
-                "restored as conflicts."
-            ) from error
+            raise ToolError(_restore_stopped(changes, names, index, error)) from error
+
+
+def _restore_stopped(
+    changes: list[dict[str, Any]], names: dict[str, str], failed: int, error: Exception
+) -> str:
+    """Say what an undo restored before a failed write, and what it did not.
+
+    A write YNAB refused left its category as it was; one it never answered may have
+    put it back, and the user is told to check it.
+
+    Args:
+        changes: The changes being reverted, in the order written.
+        names: Each category's name, safe to show.
+        failed: Index of the change YNAB refused or never answered.
+        error: What YNAB answered.
+
+    Returns:
+        The error message.
+    """
+    category = names[changes[failed]["category_id"]]
+    if isinstance(error, retry.YnabUnavailable):
+        parts = [f"Undo stopped: {category} may be back: check it in YNAB ({error})."]
+        left = changes[failed + 1 :]
+    else:
+        parts = [f"Undo stopped: setting {category} back failed ({error})."]
+        left = changes[failed:]
+    restored = ", ".join(names[c["category_id"]] for c in changes[:failed]) or "none"
+    parts.append(f"Restored: {restored}.")
+    if left:
+        parts.append(f"Not restored: {', '.join(names[c['category_id']] for c in left)}.")
+    parts.append("The operation is still in effect: undo_operation again restores the rest.")
+    return " ".join(parts)
 
 
 def _move_back_question(
@@ -270,6 +295,9 @@ async def _undo_move(
 ) -> WriteResult | InputRequiredResult:
     """Put both categories of a move back, unless either changed since.
 
+    A category already at its amount before counts as restored: a retry after an
+    undo that stopped halfway finishes it.
+
     Args:
         ctx: The MCP context, used to ask the user.
         plan_id: YNAB plan id or 'last-used'.
@@ -285,7 +313,8 @@ async def _undo_move(
     moved = [
         change["category_id"]
         for change in changes
-        if current.get(change["category_id"], {}).get("budgeted") != change["to"]
+        if current.get(change["category_id"], {}).get("budgeted")
+        not in (change["to"], change["from"])
     ]
     if moved:
         conflict = writes.Plan(conflicts=moved)
@@ -296,7 +325,8 @@ async def _undo_move(
     if refused is not None:
         return refused
     names = {c["category_id"]: untrusted(current[c["category_id"]]["name"]) for c in changes}
-    await _restore(plan_id, month, list(reversed(changes)), names)
+    pending = [c for c in reversed(changes) if current[c["category_id"]]["budgeted"] == c["to"]]
+    await _restore(plan_id, month, pending, names)
     book.mark_undone(entry.operation_id)
     return result_of("applied", "Both amounts restored.", writes.Plan())
 

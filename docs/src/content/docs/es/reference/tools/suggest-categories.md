@@ -58,7 +58,7 @@ every cursor.
 | Campo | Tipo | Descripción |
 |---|---|---|
 | `pending_count` | integer | Transactions waiting for a category, in total (within the date window, if one was given). |
-| `suggested_count` | integer | How many of them have a suggestion. |
+| `suggested_count` | integer | How many of them have a suggestion (within the date window, if one was given). |
 | `items` | array of object | This page of pending transactions, newest first. |
 | `items[].transaction_id` | string | YNAB id of the transaction. |
 | `items[].date` | string | Date, YYYY-MM-DD. |

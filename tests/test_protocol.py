@@ -204,7 +204,7 @@ def test_every_parameter_and_answer_field_is_described_to_the_agent() -> None:
     assert missing == []
 
 
-def test_suggest_categories_takes_a_window_and_fetches_the_whole_plan() -> None:
+def test_suggest_categories_window_still_fetches_all_transactions() -> None:
     """The window limits the items; the transactions fetched, history included, are all of them."""
     get_txs = AsyncMock(return_value=_TXS)
     with (

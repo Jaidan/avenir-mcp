@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import random
 import tempfile
 import unicodedata
@@ -305,3 +306,11 @@ def test_any_headers_are_refused_without_the_exact_token(
     carries = authorization == f"Bearer {_TOKEN}".encode()
     assert passed == ([True] if carries else [])
     assert carries or sent[0]["status"] == 401
+
+
+@pytest.mark.parametrize("window", ["20260901:", ":2026-W36-1", "2026-9-1:"])
+def test_a_cursor_with_a_non_canonical_date_is_refused(window: str) -> None:
+    """Only YYYY-MM-DD is read, so one window has one cursor."""
+    cursor = base64.urlsafe_b64encode(f"offset:3:{window}".encode()).decode()
+    with pytest.raises(ValueError, match="next_cursor"):
+        triage._decode_cursor(cursor)  # pylint: disable=protected-access

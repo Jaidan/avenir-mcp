@@ -88,7 +88,12 @@ async def suggest_categories(
         ToolError: If the cursor was not issued by a previous page with the same dates, or
             until_date is before since_date.
     """
-    logger.info("Tool called: suggest_categories(limit=%d)", limit)
+    logger.info(
+        "Tool called: suggest_categories(limit=%d, since=%s, until=%s)",
+        limit,
+        since_date,
+        until_date,
+    )
     transactions = await client.get_transactions(plan_id)
     categories = await client.get_categories(plan_id)
     off_budget = await _off_budget(plan_id)

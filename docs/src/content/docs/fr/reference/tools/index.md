@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-avenir-mcp déclare ces outils. Les outils de lecture sont toujours disponibles ; les outils d'écriture n'existent qu'avec `AVENIR_MCP_WRITE=1`, et tous sauf `approve_transactions` et `import_transactions` sont prévisualisés et confirmés.
+avenir-mcp déclare ces outils. Les outils de lecture sont toujours disponibles ; les outils d'écriture n'existent qu'avec `AVENIR_MCP_WRITE=1`, et tous sauf `import_transactions` sont prévisualisés et confirmés ; `approve_transactions` demande d'abord quand il approuve par dates, et applique aussitôt les ids donnés.
 
 ## Lecture
 

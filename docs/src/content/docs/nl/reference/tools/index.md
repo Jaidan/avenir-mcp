@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-avenir-mcp biedt deze tools aan. Leestools zijn altijd beschikbaar; schrijftools bestaan alleen met `AVENIR_MCP_WRITE=1`, en ze krijgen allemaal behalve `approve_transactions` en `import_transactions` een voorbeeld en een bevestiging.
+avenir-mcp biedt deze tools aan. Leestools zijn altijd beschikbaar; schrijftools bestaan alleen met `AVENIR_MCP_WRITE=1`, en ze krijgen allemaal behalve `import_transactions` een voorbeeld en een bevestiging; `approve_transactions` vraagt eerst wanneer het op datum goedkeurt, en past opgegeven ids meteen toe.
 
 ## Lezen
 

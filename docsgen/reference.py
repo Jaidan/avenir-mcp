@@ -39,7 +39,9 @@ UNDOABLE = {
     "set_category_target",
     "rename_payee",
 }
-UNCONFIRMED_WRITES = {"approve_transactions", "import_transactions"}
+UNCONFIRMED_WRITES = {"import_transactions"}
+# Writes whose confirmation depends on the mode: ids at once, a filter after asking.
+CONFIRMED_BY_MODE = {"approve_transactions"}
 
 # Tool -> the page that shows it at work.
 GUIDES = {
@@ -138,9 +140,12 @@ def _behaviour(tool: Any, label: dict[str, str], capture: Capture | None) -> lis
     ann = tool.annotations
     read = ann.read_only_hint is True
     confirmed = not read and tool.name not in UNCONFIRMED_WRITES
+    confirmation = label["confirm_yes"] if confirmed else label["confirm_no"]
+    if tool.name in CONFIRMED_BY_MODE:
+        confirmation = label["confirm_modes"]
     rows = [
         (label["kind"], label["read"] if read else label["write"]),
-        (label["confirmation"], label["confirm_yes"] if confirmed else label["confirm_no"]),
+        (label["confirmation"], confirmation),
         (label["undo"], label["undo_yes"] if tool.name in UNDOABLE else label["undo_no"]),
     ]
     if not read:

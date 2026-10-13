@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-avenir-mcp stellt diese Tools bereit. Lesende Tools sind immer verfügbar; schreibende existieren nur mit `AVENIR_MCP_WRITE=1`, und alle außer `approve_transactions` und `import_transactions` werden als Vorschau gezeigt und bestätigt.
+avenir-mcp stellt diese Tools bereit. Lesende Tools sind immer verfügbar; schreibende existieren nur mit `AVENIR_MCP_WRITE=1`, und alle außer `import_transactions` werden als Vorschau gezeigt und bestätigt; `approve_transactions` fragt vorher, wenn es nach Datum genehmigt, und wendet übergebene IDs sofort an.
 
 ## Lesen
 

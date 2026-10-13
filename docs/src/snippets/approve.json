@@ -1,3 +1,7 @@
 {
-  "approved": 2
+  "approved": 2,
+  "status": "applied",
+  "message": null,
+  "confirmation": null,
+  "transactions": []
 }

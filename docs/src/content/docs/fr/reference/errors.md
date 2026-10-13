@@ -80,6 +80,18 @@ Tout outil qui appelle YNAB peut renvoyer l'erreur de YNAB : `Error calling tool
 - `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
 - `The plan changed between the preview and the answer. Call again without an answer to get a new preview.`
 
+## [`approve_transactions`](/avenir-mcp/fr/reference/tools/approve-transactions/)
+
+- `Give either tx_ids, to approve those transactions, or since_date (with until_date and exclude_ids if needed), to approve a reviewed period; not both.`
+- `until_date {until} is before since_date {since}: swap them.`
+- `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
+- `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
+- `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
+- `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
+- `The plan changed between the preview and the answer. Call again without an answer to get a new preview.`
+
 ## [`create_category`](/avenir-mcp/fr/reference/tools/create-category/)
 
 - `Group {category_group_id} is not in this plan: use an id from list_category_groups.`

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-avenir-mcp declares these tools. Read-only tools are always available; write tools exist only with `AVENIR_MCP_WRITE=1`, and every one of them but `approve_transactions` and `import_transactions` is previewed and confirmed.
+avenir-mcp declares these tools. Read-only tools are always available; write tools exist only with `AVENIR_MCP_WRITE=1`, and every one of them but `import_transactions` is previewed and confirmed; `approve_transactions` asks first when it approves by dates, and applies given ids at once.
 
 ## Read
 

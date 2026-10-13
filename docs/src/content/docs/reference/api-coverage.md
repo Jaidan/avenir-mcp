@@ -15,11 +15,11 @@ YNAB's API 1.87.0 has 44 operations: 16 used by avenir-mcp, 11 planned, 17 left 
 |---|---|---|
 | `GET /plans` | covered | `list_plans`, `ynab://plans` |
 | `GET /plans/{plan_id}` | excluded | The whole plan at once: far more than an agent can read; tools fetch the parts they need. |
-| `GET /plans/{plan_id}/accounts` | covered | `apply_categories`, `create_transactions`, `find_transactions`, `forecast_balance`, `get_debt_payoff_plan`, `get_net_worth_trend`, `get_runway`, `get_savings_rate`, `list_accounts`, `list_scheduled_transactions`, `reconcile_account`, `split_transaction`, `suggest_categories`, `ynab://plans/{plan_id}/accounts` |
+| `GET /plans/{plan_id}/accounts` | covered | `apply_categories`, `approve_transactions`, `create_transactions`, `find_transactions`, `forecast_balance`, `get_debt_payoff_plan`, `get_net_worth_trend`, `get_runway`, `get_savings_rate`, `list_accounts`, `list_scheduled_transactions`, `reconcile_account`, `split_transaction`, `suggest_categories`, `ynab://plans/{plan_id}/accounts` |
 | `POST /plans/{plan_id}/accounts` | excluded | Accounts are opened in YNAB, where the bank connection is set up. |
 | `GET /plans/{plan_id}/accounts/{account_id}` | excluded | list_accounts gives every account in the same single request. |
 | `GET /plans/{plan_id}/accounts/{account_id}/transactions` | excluded | find_transactions filters the plan's transactions by account, in one request. |
-| `GET /plans/{plan_id}/categories` | covered | `apply_categories`, `create_category`, `create_transactions`, `find_recurring_charges`, `find_transactions`, `forecast_balance`, `get_runway`, `get_savings_rate`, `list_category_groups`, `list_scheduled_transactions`, `reconcile_account`, `set_category_target`, `split_transaction`, `suggest_categories`, `undo_operation`, `update_category`, `ynab://plans/{plan_id}/categories` |
+| `GET /plans/{plan_id}/categories` | covered | `apply_categories`, `approve_transactions`, `create_category`, `create_transactions`, `find_recurring_charges`, `find_transactions`, `forecast_balance`, `get_runway`, `get_savings_rate`, `list_category_groups`, `list_scheduled_transactions`, `reconcile_account`, `set_category_target`, `split_transaction`, `suggest_categories`, `undo_operation`, `update_category`, `ynab://plans/{plan_id}/categories` |
 | `POST /plans/{plan_id}/categories` | covered | `create_category` |
 | `GET /plans/{plan_id}/categories/{category_id}` | excluded | The category list gives every category in one request. |
 | `PATCH /plans/{plan_id}/categories/{category_id}` | covered | `set_category_target`, `undo_operation`, `update_category` |
@@ -49,7 +49,7 @@ YNAB's API 1.87.0 has 44 operations: 16 used by avenir-mcp, 11 planned, 17 left 
 | `PUT /plans/{plan_id}/scheduled_transactions/{scheduled_transaction_id}` | planned | Change a coming payment, after reading them is in place. |
 | `DELETE /plans/{plan_id}/scheduled_transactions/{scheduled_transaction_id}` | planned | Cancel a coming payment, after reading them is in place. |
 | `GET /plans/{plan_id}/settings` | planned | The plan's currency and formats, to show amounts with their currency. |
-| `GET /plans/{plan_id}/transactions` | covered | `apply_categories`, `find_recurring_charges`, `find_transactions`, `flag_transactions`, `forecast_balance`, `get_debt_payoff_plan`, `get_net_worth_trend`, `get_runway`, `get_savings_rate`, `list_payees`, `reconcile_account`, `rename_payee`, `split_transaction`, `suggest_categories`, `undo_operation` |
+| `GET /plans/{plan_id}/transactions` | covered | `apply_categories`, `approve_transactions`, `find_recurring_charges`, `find_transactions`, `flag_transactions`, `forecast_balance`, `get_debt_payoff_plan`, `get_net_worth_trend`, `get_runway`, `get_savings_rate`, `list_payees`, `reconcile_account`, `rename_payee`, `split_transaction`, `suggest_categories`, `undo_operation` |
 | `POST /plans/{plan_id}/transactions` | covered | `create_transactions`, `reconcile_account` |
 | `PATCH /plans/{plan_id}/transactions` | covered | `apply_categories`, `approve_transactions`, `flag_transactions`, `reconcile_account`, `split_transaction`, `undo_operation` |
 | `POST /plans/{plan_id}/transactions/import` | covered | `import_transactions` |
@@ -87,7 +87,7 @@ What each tool and resource reads and writes, paths without the leading `/plans/
 | `ynab://plans/{plan_id}/accounts` | `GET /accounts` | — |
 | `ynab://plans/{plan_id}/categories` | `GET /categories` | — |
 | `apply_categories` | `GET /accounts`, `GET /categories`, `GET /transactions` | `PATCH /transactions` |
-| `approve_transactions` | — | `PATCH /transactions` |
+| `approve_transactions` | `GET /accounts`, `GET /categories`, `GET /transactions` | `PATCH /transactions` |
 | `create_category` | `GET /categories` | `POST /categories` |
 | `create_transactions` | `GET /accounts`, `GET /categories` | `POST /transactions` |
 | `flag_transactions` | `GET /transactions` | `PATCH /transactions` |

@@ -104,6 +104,19 @@ def _categorisation(tx: dict[str, Any], labels: dict[str, str]) -> dict[str, Any
     }
 
 
+def as_match(tx: dict[str, Any], labels: dict[str, str]) -> Match:
+    """Turn a YNAB transaction into what an agent reads of it.
+
+    Args:
+        tx: A YNAB transaction.
+        labels: The plan's category names by id.
+
+    Returns:
+        The transaction, bank text made safe to show.
+    """
+    return Match(**line_fields(tx), **_categorisation(tx, labels))
+
+
 def _in_categories(tx: dict[str, Any], category_ids: set[str]) -> bool:
     """Tell whether a transaction, or one of its live split lines, is in the categories.
 
@@ -203,9 +216,51 @@ def find(  # pylint: disable=too-many-arguments,too-many-locals
     ]
     kept.sort(key=lambda tx: tx["date"], reverse=True)
     return Found(
-        transactions=[
-            Match(**line_fields(tx), **_categorisation(tx, labels)) for tx in kept[:limit]
-        ],
+        transactions=[as_match(tx, labels) for tx in kept[:limit]],
         truncated=len(kept) > limit,
         until_date=last,
     )
+
+
+def approvable(  # pylint: disable=too-many-arguments
+    transactions: list[dict[str, Any]],
+    accounts: list[dict[str, Any]],
+    categories: list[dict[str, Any]],
+    *,
+    since: date,
+    until: date,
+    exclude_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Pick the transactions a period's review approves, oldest first.
+
+    A transaction is kept when it is not deleted, dated within the window, not yet
+    approved, seen by the bank (cleared or reconciled; a missing state counts as
+    uncleared), not excluded, and has its category: one of its own, split lines or
+    a transfer (triage.is_uncategorized says no), or none needed on an off-budget
+    account.
+
+    Args:
+        transactions: The plan's transactions, as YNAB sends them.
+        accounts: The plan's accounts.
+        categories: The plan's categories.
+        since: First date, included.
+        until: Last date, included.
+        exclude_ids: Transactions the user keeps for later.
+
+    Returns:
+        The transactions to approve, as YNAB sent them, by date then id.
+    """
+    off_budget = {a["id"] for a in accounts if a.get("on_budget") is False}
+    internal = internal_uncategorized(categories)
+    first, last, excluded = since.isoformat(), until.isoformat(), set(exclude_ids)
+    kept = [
+        tx
+        for tx in transactions
+        if not tx.get("deleted")
+        and first <= tx["date"] <= last
+        and not tx.get("approved")
+        and tx.get("cleared", "uncleared") != "uncleared"
+        and tx["id"] not in excluded
+        and (tx.get("account_id") in off_budget or not is_uncategorized(tx, internal))
+    ]
+    return sorted(kept, key=lambda tx: (tx["date"], tx["id"]))

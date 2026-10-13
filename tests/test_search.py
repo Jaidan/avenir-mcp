@@ -366,3 +366,81 @@ def test_filters_combine_with_and_and_truncated_counts_the_kept() -> None:
     )  # fmt: skip
     assert len(found.transactions) == 2
     assert found.truncated is True
+
+
+# ---------------------------------------------------------------------------
+# approvable: what approve_transactions approves by dates
+# ---------------------------------------------------------------------------
+
+_TRACKING: list[dict[str, Any]] = [
+    *_ACCOUNTS,
+    {"id": "a-track", "name": "House", "on_budget": False},
+]
+_READY: dict[str, Any] = {"category_id": "c-food", "cleared": "cleared"}
+
+
+def _approvable(txs: list[dict[str, Any]], exclude: list[str] | None = None) -> list[str]:
+    kept = search.approvable(
+        txs, _TRACKING, _MIXED_CATEGORIES,
+        since=date(2026, 9, 1), until=date(2026, 9, 30), exclude_ids=exclude or [],
+    )  # fmt: skip
+    return [tx["id"] for tx in kept]
+
+
+def test_approvable_keeps_reviewed_rows_oldest_first() -> None:
+    """Categorized, split, transfer and off-budget rows that the bank cleared, by date."""
+    live = [{"id": "s1", "category_id": "c-food", "deleted": False}]
+    txs = [
+        _tx("cat", "2026-09-12", -1_000, **_READY),
+        _tx("split", "2026-09-03", -1_000, cleared="cleared", subtransactions=live),
+        _tx("transfer", "2026-09-05", -1_000, cleared="cleared", transfer_account_id="a-new"),
+        _tx("tracking", "2026-09-07", -1_000, cleared="reconciled", account_id="a-track"),
+        _tx("same-day", "2026-09-12", -2_000, **_READY),
+    ]
+    assert _approvable(txs) == ["split", "transfer", "tracking", "cat", "same-day"]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"deleted": True},
+        {"date": "2026-08-31"},
+        {"date": "2026-10-01"},
+        {"approved": True},
+        {"cleared": "uncleared"},
+        {"category_id": None},
+        {"category_id": "c-internal"},
+        {"category_id": None, "subtransactions": [{"id": "s1", "deleted": True}]},
+        {"id": "skip"},
+    ],
+    ids=[
+        "deleted",
+        "before the window",
+        "after the window",
+        "already approved",
+        "uncleared",
+        "no category",
+        "internal Uncategorized",
+        "split whose lines are deleted",
+        "excluded",
+    ],
+)
+def test_approvable_leaves_out_what_is_not_reviewed(extra: dict[str, Any]) -> None:
+    """Each rule on its own leaves out a row that would be approved otherwise."""
+    row = _tx("row", "2026-09-10", -1_000, **_READY)
+    assert _approvable([row]) == ["row"]
+    row.update(extra)
+    assert _approvable([row], exclude=["skip"]) == []
+
+
+def test_approvable_reads_a_missing_cleared_state_as_uncleared() -> None:
+    """The bank has not shown a row YNAB sent without a cleared state."""
+    row = _tx("row", "2026-09-10", -1_000, category_id="c-food")
+    del row["cleared"]
+    assert _approvable([row]) == []
+
+
+def test_approvable_keeps_the_first_and_last_days() -> None:
+    """Both ends of the window are included."""
+    txs = [_tx("first", "2026-09-01", -1, **_READY), _tx("last", "2026-09-30", -1, **_READY)]
+    assert _approvable(txs) == ["first", "last"]

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-avenir-mcp declara estas herramientas. Las de lectura están siempre disponibles; las de escritura solo existen con `AVENIR_MCP_WRITE=1`, y todas salvo `approve_transactions` e `import_transactions` se previsualizan y se confirman.
+avenir-mcp declara estas herramientas. Las de lectura están siempre disponibles; las de escritura solo existen con `AVENIR_MCP_WRITE=1`, y todas salvo `import_transactions` se previsualizan y se confirman; `approve_transactions` pregunta antes cuando aprueba por fechas, y aplica de inmediato los ids dados.
 
 ## Lectura
 

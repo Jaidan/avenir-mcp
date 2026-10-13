@@ -10,10 +10,10 @@ from datetime import date
 from pathlib import Path
 from types import ModuleType
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastmcp import Client
+from fastmcp import Client, Context
 from fastmcp.exceptions import ToolError
 
 import avenir_mcp
@@ -274,8 +274,11 @@ def test_approve_transactions_delegates_to_client() -> None:
     with patch(
         "avenir_mcp.client.approve_transactions", new=AsyncMock(return_value={"approved": 1})
     ) as mock_fn:
-        result = asyncio.run(tools_budget.approve_transactions("b1", ["t1"]))
+        result = asyncio.run(
+            tools_budget.approve_transactions("b1", MagicMock(spec=Context), ["t1"])
+        )
     mock_fn.assert_called_once_with("b1", ["t1"])
+    assert isinstance(result, tools_budget.Approval)
     assert result.approved == 1
     assert "approve_transactions" in [t.name for t in asyncio.run(server.mcp.list_tools())]
 

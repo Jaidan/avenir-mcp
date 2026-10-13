@@ -60,6 +60,8 @@ Any tool that reaches YNAB can return YNAB's own error: `Error calling tool '<to
 
 ## [`suggest_categories`](/avenir-mcp/reference/tools/suggest-categories/)
 
+- `until_date {until} is before since_date {since}: swap them.`
+- `This cursor was issued for a different date window: pass the same since_date and until_date as for the first page, or omit the cursor to start again.`
 - `Invalid cursor: pass the next_cursor value from the previous page unchanged, or omit it to start from the first page.`
 
 ## [`apply_categories`](/avenir-mcp/reference/tools/apply-categories/)

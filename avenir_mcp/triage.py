@@ -95,7 +95,7 @@ class Triage(Model):
     """One page of pending transactions, with what is needed to classify them."""
 
     pending_count: int
-    """Transactions waiting for a category, in total."""
+    """Transactions waiting for a category, in total (within the date window, if one was given)."""
     suggested_count: int
     """How many of them have a suggestion."""
     items: list[PendingItem]
@@ -106,30 +106,33 @@ class Triage(Model):
     """Pass it back to get the next page; null on the last page."""
 
 
-def _encode_cursor(offset: int) -> str:
-    """Encode the offset of the next page as an opaque cursor.
+def _encode_cursor(offset: int, since: date | None, until: date | None) -> str:
+    """Encode the next page's offset and the date window it belongs to as an opaque cursor.
 
     Args:
         offset: Index of the first item of the next page.
+        since: First date of the window, or None for no start.
+        until: Last date of the window, or None for no end.
 
     Returns:
         The cursor.
     """
-    return base64.urlsafe_b64encode(f"offset:{offset}".encode()).decode()
+    window = f"{since.isoformat() if since else ''}:{until.isoformat() if until else ''}"
+    return base64.urlsafe_b64encode(f"offset:{offset}:{window}".encode()).decode()
 
 
 # The characters of URL-safe Base64, padding included: anything else is not a cursor of ours.
 _CURSOR_ALPHABET = frozenset(string.ascii_letters + string.digits + "-_=")
 
 
-def _decode_cursor(cursor: str) -> int:
+def _decode_cursor(cursor: str) -> tuple[int, date | None, date | None]:
     """Decode a cursor made by :func:`_encode_cursor`.
 
     Args:
         cursor: The next_cursor of a previous page.
 
     Returns:
-        The offset it stands for.
+        The offset it stands for, and the first and last date of the window it was issued for.
 
     Raises:
         ValueError: If the cursor was not made by this module, saying what to pass.
@@ -142,20 +145,19 @@ def _decode_cursor(cursor: str) -> int:
         # ends in this same refusal anyway.
         if not set(cursor) <= _CURSOR_ALPHABET:  # pragma: no mutate
             raise ValueError(cursor)  # pragma: no mutate
-        # Splitting on the last colon instead of the first would only change what a
-        # cursor holding several of them decodes to, and neither reading of one leaves
-        # the prefix "offset" with digits after it.
         decoded = base64.urlsafe_b64decode(cursor.encode()).decode()
-        prefix, _, value = decoded.partition(":")  # pragma: no mutate
-        if prefix != "offset" or not value.isdigit():
+        parts = decoded.split(":")
+        if len(parts) != 4 or parts[0] != "offset" or not parts[1].isdigit():
             # The value given here is never read: the message below is what is raised.
             raise ValueError(cursor)  # pragma: no mutate
+        since = date.fromisoformat(parts[2]) if parts[2] else None
+        until = date.fromisoformat(parts[3]) if parts[3] else None
     except ValueError as error:  # binascii.Error and UnicodeDecodeError are ValueErrors
         raise ValueError(
             "Invalid cursor: pass the next_cursor value from the previous page unchanged, "
             "or omit it to start from the first page."
         ) from error
-    return int(value)
+    return int(parts[1]), since, until
 
 
 # YNAB's own group, which holds "Inflow: Ready to Assign" and "Uncategorized".
@@ -338,7 +340,35 @@ def _suggestion(
     )
 
 
-def prepare(  # pylint: disable=too-many-arguments
+def _page_start(cursor: str | None, since: date | None, until: date | None) -> int:
+    """Check the window and say where the page starts.
+
+    Args:
+        cursor: ``next_cursor`` of the previous page, or None for the first page.
+        since: First date of the window, or None.
+        until: Last date of the window, or None.
+
+    Returns:
+        The index of the first item of the page.
+
+    Raises:
+        ValueError: If the dates are reversed, the cursor was not issued by this module, or
+            it was issued for another window.
+    """
+    if since is not None and until is not None and until < since:
+        raise ValueError(f"until_date {until} is before since_date {since}: swap them.")
+    if not cursor:
+        return 0
+    offset, cursor_since, cursor_until = _decode_cursor(cursor)
+    if (cursor_since, cursor_until) != (since, until):
+        raise ValueError(
+            "This cursor was issued for a different date window: pass the same since_date "
+            "and until_date as for the first page, or omit the cursor to start again."
+        )
+    return offset
+
+
+def prepare(  # pylint: disable=too-many-arguments,too-many-locals
     transactions: list[dict[str, Any]],
     categories: list[dict[str, Any]],
     *,
@@ -346,6 +376,8 @@ def prepare(  # pylint: disable=too-many-arguments
     cursor: str | None = None,
     threshold: float | None = None,
     off_budget: set[str] | frozenset[str] = frozenset(),
+    since: date | None = None,
+    until: date | None = None,
 ) -> Triage:
     """Page through the pending transactions, newest first, with suggestions.
 
@@ -356,19 +388,30 @@ def prepare(  # pylint: disable=too-many-arguments
         cursor: ``next_cursor`` of the previous page, or None for the first page.
         threshold: Confidence needed for a suggestion; defaults to the classifier's.
         off_budget: Ids of tracking accounts, whose transactions take no category.
+        since: First date of the pending transactions to list, or None for no start. The
+            history that suggestions come from is never limited by it.
+        until: Last date of the pending transactions to list, or None for no end.
 
     Returns:
-        One page, the total pending, the cursor of the next page and, on the first page,
+        One page, the total pending in the window, the cursor of the next page and, on the first
+        page,
         the categories to choose from.
 
     Raises:
-        ValueError: If ``cursor`` was not issued by this function.
+        ValueError: If the dates are reversed, ``cursor`` was not issued by this function,
+            or it was issued for another window.
     """
-    offset = _decode_cursor(cursor) if cursor else 0
+    offset = _page_start(cursor, since, until)
     uncategorized = internal_uncategorized(categories)
     histories = _histories(transactions)
     pending = sorted(
-        (tx for tx in transactions if _is_pending(tx, set(off_budget), uncategorized)),
+        (
+            tx
+            for tx in transactions
+            if _is_pending(tx, set(off_budget), uncategorized)
+            and (since is None or tx["date"] >= since.isoformat())
+            and (until is None or tx["date"] <= until.isoformat())
+        ),
         key=lambda tx: tx["date"],
         reverse=True,
     )
@@ -399,5 +442,5 @@ def prepare(  # pylint: disable=too-many-arguments
                 if not c.get("deleted") and c["id"] not in uncategorized
             ]
         ),
-        next_cursor=_encode_cursor(end) if end < len(items) else None,
+        next_cursor=_encode_cursor(end, since, until) if end < len(items) else None,
     )

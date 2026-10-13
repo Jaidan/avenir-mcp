@@ -202,3 +202,25 @@ def test_every_parameter_and_answer_field_is_described_to_the_agent() -> None:
             defs = dict(schema.get("$defs", {}))
             missing += _undescribed(schema, defs, f"{tool.name} ({kind})")
     assert missing == []
+
+
+def test_suggest_categories_takes_a_window_and_fetches_the_whole_plan() -> None:
+    """The window limits the items; the transactions fetched, history included, are all of them."""
+    get_txs = AsyncMock(return_value=_TXS)
+    with (
+        patch("avenir_mcp.client.get_transactions", get_txs),
+        patch("avenir_mcp.client.get_categories", AsyncMock(return_value=_CATS)),
+        patch("avenir_mcp.client.get_accounts", AsyncMock(return_value=_ACCOUNTS)),
+    ):
+        outside = {"plan_id": "b1", "since_date": "2001-01-01", "until_date": "2001-01-31"}
+        empty = asyncio.run(_call("suggest_categories", outside)).structured_content
+        reversed_ = asyncio.run(
+            _call(
+                "suggest_categories",
+                {"plan_id": "b1", "since_date": "2026-02-01", "until_date": "2026-01-01"},
+            )
+        )
+    assert empty["pending_count"] == 0
+    get_txs.assert_awaited_with("b1")
+    assert reversed_.is_error
+    assert "swap them" in reversed_.content[0].text

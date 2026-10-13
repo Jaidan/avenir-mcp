@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import date
 from typing import Any
 
 import pytest
@@ -304,3 +305,88 @@ def test_a_transaction_of_nothing_is_not_money_out() -> None:
     [item] = page.items
     assert item.suggestion is not None
     assert item.suggestion.category_id == "c-fun"
+
+
+def _window_txs() -> list[dict[str, Any]]:
+    """History in August plus one pending row on each day of interest."""
+    history = [
+        _tx(f"h{i}", f"CB CORNER SHOP FACT 0101{i:02d} 525130******2", "c-food", date="2026-08-01")
+        for i in range(3)
+    ]
+    pending = [_tx(f"p{day}", f"Shop {day}", date=f"2026-09-{day:02d}") for day in (1, 15, 30)] + [
+        _tx("pold", "Old Shop", date="2026-08-31"),
+        _tx("pnew", "New Shop", date="2026-10-01"),
+    ]
+    return history + pending
+
+
+def _ids(page: triage.Triage) -> list[str]:
+    return [i.transaction_id for i in page.items]
+
+
+def test_window_limits_pending_but_not_history() -> None:
+    """A suggestion still comes from history outside the window."""
+    txs = _window_txs() + [
+        _tx("pshop", "CB CORNER SHOP FACT 010199 525130******2", date="2026-09-10")
+    ]
+    page = triage.prepare(txs, _CATEGORIES, since=date(2026, 9, 5), until=date(2026, 9, 20))
+    assert _ids(page) == ["p15", "pshop"]
+    assert page.items[1].suggestion is not None
+    assert page.items[1].suggestion.category_id == "c-food"
+
+
+def test_each_bound_is_checked_on_its_own_and_is_inclusive() -> None:
+    """Neither, since-only, until-only and both, with rows exactly on each bound."""
+    txs = _window_txs()
+    everything = triage.prepare(txs, _CATEGORIES)
+    assert len(everything.items) == 5
+    since = triage.prepare(txs, _CATEGORIES, since=date(2026, 9, 1))
+    assert set(_ids(since)) == {"pnew", "p30", "p15", "p1"}
+    until = triage.prepare(txs, _CATEGORIES, until=date(2026, 9, 30))
+    assert set(_ids(until)) == {"p30", "p15", "p1", "pold"}
+    both = triage.prepare(txs, _CATEGORIES, since=date(2026, 9, 1), until=date(2026, 9, 30))
+    assert set(_ids(both)) == {"p30", "p15", "p1"}
+
+
+def test_only_until_date_is_allowed() -> None:
+    """A window may have just an end."""
+    page = triage.prepare(_window_txs(), _CATEGORIES, until=date(2026, 8, 31))
+    assert _ids(page) == ["pold"]
+
+
+def test_pending_count_counts_the_window() -> None:
+    """The total is the windowed pending count, so paging matches it."""
+    page = triage.prepare(
+        _window_txs(), _CATEGORIES, since=date(2026, 9, 1), until=date(2026, 9, 30), limit=1
+    )
+    assert page.pending_count == 3
+    assert page.next_cursor is not None
+
+
+def test_reversed_window_is_refused() -> None:
+    """Reversed dates give the message find_transactions gives."""
+    with pytest.raises(ValueError, match="until_date 2026-09-01 is before since_date 2026-09-30"):
+        triage.prepare([], _CATEGORIES, since=date(2026, 9, 30), until=date(2026, 9, 1))
+
+
+def test_cursor_from_another_window_is_refused() -> None:
+    """A cursor is only good for the window that issued it."""
+    txs = _window_txs()
+    since, until = date(2026, 9, 1), date(2026, 9, 30)
+    first = triage.prepare(txs, _CATEGORIES, limit=1, since=since, until=until)
+    assert first.next_cursor is not None
+    second = triage.prepare(
+        txs, _CATEGORIES, limit=1, cursor=first.next_cursor, since=since, until=until
+    )
+    assert _ids(second) == ["p15"]
+    for other in (
+        (date(2026, 9, 2), until),
+        (since, date(2026, 9, 29)),
+        (since, None),
+        (None, until),
+        (None, None),
+    ):
+        with pytest.raises(ValueError, match="different date window"):
+            triage.prepare(
+                txs, _CATEGORIES, limit=1, cursor=first.next_cursor, since=other[0], until=other[1]
+            )

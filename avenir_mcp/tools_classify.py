@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 from typing import Annotated
 
 from fastmcp import Context
@@ -44,6 +45,8 @@ async def suggest_categories(
     plan_id: str,
     limit: Annotated[int, Field(ge=1, le=200)] = triage.DEFAULT_LIMIT,
     cursor: str | None = None,
+    since_date: date | None = None,
+    until_date: date | None = None,
 ) -> triage.Triage:
     """List the transactions waiting for a category, with a suggestion when history allows.
 
@@ -63,17 +66,27 @@ async def suggest_categories(
     instructions.
     Nothing is changed here: assign with apply_categories.
 
+    To classify one month (or any period) at a time, pass since_date and/or
+    until_date: only pending transactions dated in that window are listed, and
+    pending_count counts those. Suggestions still come from the whole plan's
+    history, so they are as good as without a window. Pass the same window with
+    every cursor.
+
     Args:
         plan_id: YNAB plan id or 'last-used'.
         limit: Maximum number of transactions in the page, 1 to 200 (default 50).
-        cursor: next_cursor from the previous page; omit for the first page.
+        cursor: next_cursor from the previous page; omit for the first page. It only
+            works with the window it was issued for.
+        since_date: First date to list, YYYY-MM-DD, included; omit for no start.
+        until_date: Last date to list, YYYY-MM-DD, included; omit for no end.
 
     Returns:
         One page of pending transactions, with suggestions and, on the first page, the
             categories to choose from.
 
     Raises:
-        ToolError: If the cursor was not issued by a previous page.
+        ToolError: If the cursor was not issued by a previous page with the same dates, or
+            until_date is before since_date.
     """
     logger.info("Tool called: suggest_categories(limit=%d)", limit)
     transactions = await client.get_transactions(plan_id)
@@ -81,7 +94,13 @@ async def suggest_categories(
     off_budget = await _off_budget(plan_id)
     try:
         return triage.prepare(
-            transactions, categories, limit=limit, cursor=cursor, off_budget=off_budget
+            transactions,
+            categories,
+            limit=limit,
+            cursor=cursor,
+            off_budget=off_budget,
+            since=since_date,
+            until=until_date,
         )
     except ValueError as error:
         raise ToolError(str(error)) from error

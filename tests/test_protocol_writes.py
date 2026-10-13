@@ -208,11 +208,12 @@ def test_apply_categories_keeps_the_transaction_approved(budget: _Budget) -> Non
 
 def test_undo_keeps_the_transaction_approved(budget: _Budget) -> None:
     """Undoing a categorisation sends the approval the transaction has."""
+    budget.transactions.append(budget.transactions[0] | {"id": "t2", "approved": False})
     budget.transactions[0]["approved"] = True
-    call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}, accept)
+    assign = [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-food"}]
+    call("apply_categories", {"plan_id": "b1", "assignments": assign}, accept)
     call("undo_operation", {"plan_id": "b1"}, accept)
-    assert budget.sent_approved[-1] == {"t1": True}
-    assert budget.transactions[0]["approved"] is True
+    assert budget.sent_approved[-1] == {"t1": True, "t2": False}
 
 
 def test_undo_leaves_alone_what_was_changed_since(budget: _Budget) -> None:

@@ -14,7 +14,7 @@ import hashlib
 import json
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -71,6 +71,18 @@ class Plan(Model):
     """Assignments that change nothing."""
     conflicts: list[str] = []
     """Ids left alone because they changed since."""
+
+
+def approvals(transactions: Iterable[dict[str, Any]]) -> dict[str, bool]:
+    """Say whether each transaction is approved, so an update can send the approval it keeps.
+
+    Args:
+        transactions: The plan's transactions.
+
+    Returns:
+        Each transaction's id with its approval; a transaction without one counts as unapproved.
+    """
+    return {tx["id"]: bool(tx.get("approved")) for tx in transactions}
 
 
 def _check_category(

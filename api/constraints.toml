@@ -117,10 +117,10 @@ rule = "SaveTransactionWithOptionalFields.approved: If not supplied, transaction
 status = "tested"
 tests = [
   "tests/test_client.py::test_create_transactions_can_leave_them_for_review",
-  "tests/test_client_approval.py::test_category_update_keeps_each_transactions_approval",
-  "tests/test_client_approval.py::test_split_update_keeps_the_transactions_approval",
-  "tests/test_client_approval.py::test_cleared_update_keeps_each_transactions_approval",
-  "tests/test_client_approval.py::test_flag_update_keeps_each_transactions_approval",
+  "tests/test_client.py::test_set_transaction_categories_bulk_patches_category_ids",
+  "tests/test_client.py::test_split_transaction_sends_lines_in_milliunits_and_clears_the_category",
+  "tests/test_client.py::test_set_transactions_cleared_bulk_patches_the_status",
+  "tests/test_client.py::test_set_flags_sends_one_bulk_patch_and_null_removes_a_flag",
 ]
 # create_transactions always sends approved; every update sends the approval the
 # transaction should keep, because YNAB unapproves an update that leaves it out.

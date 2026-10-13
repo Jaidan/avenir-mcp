@@ -383,3 +383,9 @@ def test_undo_shows_bank_text_safely() -> None:
     changes = writes.plan_undo([forged], _CATEGORIES, [_move("t1", None, "c-food")]).changes
     assert len(changes) == 1
     assert changes[0].payee == "Shop RENT 0.00"
+
+
+def test_approvals_reads_each_transactions_approval() -> None:
+    """A transaction without an approval counts as unapproved."""
+    txs = [_tx("t1", approved=True), _tx("t2", approved=False), _tx("t3")]
+    assert writes.approvals(txs) == {"t1": True, "t2": False, "t3": False}

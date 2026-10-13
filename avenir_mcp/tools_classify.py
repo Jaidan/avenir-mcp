@@ -232,7 +232,7 @@ async def split_transaction(
     stop = await gate(ctx, plan_id, subject, _question(plan), confirmation)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
-    approved = any(tx["id"] == transaction_id and tx.get("approved") for tx in transactions)
+    approved = writes.approvals(transactions)[transaction_id]
     await client.split_transaction(
         plan_id,
         transaction_id,

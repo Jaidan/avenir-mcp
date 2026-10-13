@@ -15,7 +15,7 @@ from fastmcp.exceptions import ToolError
 from mcp.types import InputRequiredResult
 from pydantic import Field
 
-from avenir_mcp import app, client, forecast, journal, reconcile, schedule
+from avenir_mcp import app, client, forecast, journal, reconcile, schedule, writes
 from avenir_mcp.amounts import Amount
 from avenir_mcp.app import WRITE_TAG, mcp
 from avenir_mcp.classifier import normalize_payee
@@ -157,7 +157,7 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
     stop = await gate(ctx, plan_id, subject, question, confirmation)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
-    keeps = {tx["id"]: bool(tx.get("approved")) for tx in transactions}
+    keeps = writes.approvals(transactions)
     adjustment_id = None
     if difference:
         inflow = next(

@@ -709,7 +709,7 @@ def test_split_transaction_sends_lines_in_milliunits_and_clears_the_category() -
     ]
     with patch("httpx.AsyncClient", return_value=ctx):
         with patch.dict("os.environ", {"YNAB_API_KEY": "tok"}):
-            asyncio.run(client.split_transaction("b1", "t1", lines, approved=False))
+            asyncio.run(client.split_transaction("b1", "t1", lines, approved=True))
     http = ctx.__aenter__.return_value
     assert http.patch.call_args.args[0].endswith("/plans/b1/transactions")
     assert http.patch.call_args.kwargs["json"] == {
@@ -717,7 +717,7 @@ def test_split_transaction_sends_lines_in_milliunits_and_clears_the_category() -
             {
                 "id": "t1",
                 "category_id": None,
-                "approved": False,
+                "approved": True,
                 "subtransactions": [
                     {"amount": -81150, "category_id": "c1"},
                     {"amount": -5250, "category_id": "c2", "memo": "Soap"},
@@ -973,14 +973,14 @@ def test_set_flags_sends_one_bulk_patch_and_null_removes_a_flag() -> None:
     with patch("httpx.AsyncClient", return_value=ctx):
         with patch.dict("os.environ", {"YNAB_API_KEY": "tok"}):
             ids = asyncio.run(
-                client.set_flags("b1", [("t1", "red"), ("t2", None)], {"t1": True, "t2": True})
+                client.set_flags("b1", [("t1", "red"), ("t2", None)], {"t1": True, "t2": False})
             )
             nothing = asyncio.run(client.set_flags("b1", [], {}))
     sent = ctx.__aenter__.return_value.patch.call_args.kwargs["json"]
     assert sent == {
         "transactions": [
             {"id": "t1", "flag_color": "red", "approved": True},
-            {"id": "t2", "flag_color": None, "approved": True},
+            {"id": "t2", "flag_color": None, "approved": False},
         ]
     }
     assert ids == ["t1", "t2"]

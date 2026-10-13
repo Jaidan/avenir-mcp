@@ -157,7 +157,7 @@ async def _undo_reconcile(
     refused = await _confirm_undo(ctx, plan_id, entry, question, confirmation)
     if refused is not None:
         return refused
-    keeps = {tx_id: bool(statuses[tx_id].get("approved")) for tx_id in reverted}
+    keeps = writes.approvals(statuses.values())
     await client.set_transactions_cleared(plan_id, reverted, "cleared", keeps)
     if adjustment:
         await client.delete_transaction(plan_id, adjustment)
@@ -333,7 +333,7 @@ async def _undo_flag(
     refused = await _confirm_undo(ctx, plan_id, entry, question, confirmation)
     if refused is not None:
         return refused
-    keeps = {tx["id"]: bool(tx.get("approved")) for tx in transactions}
+    keeps = writes.approvals(transactions)
     await client.set_flags(plan_id, [(c["transaction_id"], c["from"]) for c in back], keeps)
     book.mark_undone(entry.operation_id)
     return result_of("applied", "Flags restored.", writes.Plan(conflicts=moved))

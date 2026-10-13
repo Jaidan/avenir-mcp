@@ -163,9 +163,9 @@ def test_flag_transactions_keeps_the_transaction_approved(ynab: FakeFlags) -> No
 def test_undo_of_a_flag_keeps_the_transaction_approved(ynab: FakeFlags) -> None:
     """Putting a flag back does not unapprove the transaction."""
     call("flag_transactions", _args(), accept)
-    ynab.approved["t1"] = True
+    ynab.approved.update({"t1": False, "t2": True})
     call("undo_operation", {"plan_id": "b1"}, accept)
-    assert ynab.approved == {"t1": True, "t2": False, "t3": True}
+    assert ynab.approved == {"t1": False, "t2": True, "t3": True}
 
 
 def test_undo_puts_the_flags_back(ynab: FakeFlags) -> None:

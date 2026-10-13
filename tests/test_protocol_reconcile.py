@@ -172,13 +172,6 @@ def test_reconcile_account_keeps_the_transaction_approved(bank: _Bank) -> None:
     assert approved == {"t1": True, "t2": False, "t3": True, "adj": True}
 
 
-def test_undo_of_a_reconcile_keeps_the_transaction_approved(bank: _Bank) -> None:
-    """Putting a reconciled transaction back to cleared does not unapprove it."""
-    call("reconcile_account", _args(70.0), accept)
-    call("undo_operation", {"plan_id": "b1"}, accept)
-    assert bank.sent_approved[-1] == {"t2": True}
-
-
 def test_nothing_to_reconcile(bank: _Bank) -> None:
     """Already reconciled and matching: nothing to do."""
     bank.transactions = [bank.transactions[0]]

@@ -11,7 +11,7 @@ from fastmcp import Context
 from fastmcp.exceptions import ToolError
 from mcp.types import InputRequiredResult
 
-from avenir_mcp import client, journal
+from avenir_mcp import client, journal, writes
 from avenir_mcp.app import WRITE_TAG, mcp
 from avenir_mcp.confirm import WriteStatus, gate, merged
 from avenir_mcp.flags import Flag, FlagChange, plan_flags
@@ -132,7 +132,7 @@ async def flag_transactions(
     stop = await gate(ctx, plan_id, subject, question(plan.changes, head), confirmation)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
-    keeps = {tx["id"]: bool(tx.get("approved")) for tx in transactions}
+    keeps = writes.approvals(transactions)
     await client.set_flags(plan_id, [(c.transaction_id, c.to_color) for c in plan.changes], keeps)
     operation_id = journal.Journal(journal.default_path()).record(
         plan_id,

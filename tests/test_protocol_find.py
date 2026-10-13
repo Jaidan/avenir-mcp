@@ -80,3 +80,14 @@ def test_an_unknown_category_is_a_tool_error() -> None:
     assert result.is_error
     assert "c-gone" in result.content[0].text
     assert "get_category_balances" in result.content[0].text
+
+
+def test_review_filters_reach_the_search(read: AsyncMock) -> None:
+    """cleared, approved and uncategorized narrow a cleared, categorized, unapproved row."""
+    args: dict[str, Any] = {"plan_id": "b1", "since_date": "2026-09-01"}
+    kept = call("find_transactions", {**args, "cleared": "cleared", "uncategorized": False})
+    assert [t["transaction_id"] for t in kept.structured_content["transactions"]] == ["t1"]
+    for extra in ({"cleared": "uncleared"}, {"approved": True}, {"uncategorized": True}):
+        missed = call("find_transactions", {**args, **extra}).structured_content
+        assert missed["transactions"] == []
+    read.assert_awaited_with("b1", since_date="2026-09-01")

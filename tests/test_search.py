@@ -259,3 +259,80 @@ def test_a_transaction_ynab_sent_without_a_cleared_state_counts_as_uncleared() -
     del txs[0]["cleared"]
     [match] = search.find(txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1)).transactions
     assert match.cleared == "uncleared"
+
+
+_MIXED = [
+    _tx("m-ok", "2026-09-10", -1_000, category_id="c-food", cleared="cleared", approved=True),
+    _tx("m-new", "2026-09-10", -2_000, cleared="reconciled"),
+    _tx("m-internal", "2026-09-10", -3_000, category_id="c-internal", approved=True),
+    _tx("m-split", "2026-09-10", -4_000, subtransactions=[{"id": "s", "deleted": False}]),
+    _tx("m-dead-split", "2026-09-10", -5_000, subtransactions=[{"id": "s", "deleted": True}]),
+    _tx("m-transfer", "2026-09-10", -6_000, transfer_account_id="a-new"),
+    {
+        k: v
+        for k, v in _tx("m-bare", "2026-09-10", -7_000).items()
+        if k not in ("cleared", "approved")
+    },
+]
+_MIXED_CATEGORIES = [
+    *_CATEGORIES,
+    {
+        "id": "c-internal",
+        "name": "Uncategorized",
+        "category_group_name": "Internal Master Category",
+    },
+]
+
+
+def _mixed(**kw: Any) -> list[str]:
+    """Ids found in the mixed fixture, in the order found."""
+    found = search.find(
+        _MIXED, _ACCOUNTS, _MIXED_CATEGORIES, since=date(2026, 9, 1), until=date(2026, 9, 30), **kw
+    )
+    return sorted(m.transaction_id for m in found.transactions)
+
+
+def test_cleared_keeps_only_that_state() -> None:
+    """A row without a cleared state counts as uncleared."""
+    assert _mixed(cleared="cleared") == ["m-ok"]
+    assert _mixed(cleared="reconciled") == ["m-new"]
+    assert "m-bare" in _mixed(cleared="uncleared")
+    assert "m-ok" not in _mixed(cleared="uncleared")
+
+
+def test_approved_true_and_false_are_complements() -> None:
+    """A row without an approved flag is not approved."""
+    assert _mixed(approved=True) == ["m-internal", "m-ok"]
+    assert "m-bare" in _mixed(approved=False)
+    assert len(_mixed(approved=True)) + len(_mixed(approved=False)) == len(_MIXED)
+
+
+def test_uncategorized_means_no_category_no_split_no_transfer() -> None:
+    """Null and YNAB's internal Uncategorized count; live splits and transfers do not."""
+    assert _mixed(uncategorized=True) == ["m-bare", "m-dead-split", "m-internal", "m-new"]
+    assert _mixed(uncategorized=False) == ["m-ok", "m-split", "m-transfer"]
+
+
+def test_uncategorized_does_not_exclude_off_budget_accounts() -> None:
+    """A tracking account's bare row is shown as it is."""
+    tracking = [_tx("tr", "2026-09-10", -1_000, account_id="a-new")]
+    accounts: list[dict[str, Any]] = [
+        _ACCOUNTS[0],
+        {"id": "a-new", "name": "New bank", "on_budget": False},
+    ]
+    found = search.find(
+        tracking, accounts, _CATEGORIES, since=date(2026, 9, 1), until=date(2026, 9, 30),
+        uncategorized=True,
+    )  # fmt: skip
+    assert [m.transaction_id for m in found.transactions] == ["tr"]
+
+
+def test_filters_combine_with_and_and_truncated_counts_the_kept() -> None:
+    """Unapproved and uncategorized together; the limit applies after filtering."""
+    assert _mixed(approved=False, uncategorized=True) == ["m-bare", "m-dead-split", "m-new"]
+    found = search.find(
+        _MIXED, _ACCOUNTS, _MIXED_CATEGORIES, since=date(2026, 9, 1), until=date(2026, 9, 30),
+        approved=False, uncategorized=True, limit=2,
+    )  # fmt: skip
+    assert len(found.transactions) == 2
+    assert found.truncated is True

@@ -145,6 +145,22 @@ def test_clearing_with_approve_approves_a_row_with_no_category() -> None:
     assert [(c.transaction_id, c.approved) for c in plan.changes] == [("t2", True)]
 
 
+def test_clearing_the_internal_uncategorized_changes_nothing() -> None:
+    """YNAB's internal Uncategorized counts as no category."""
+    internal = {
+        "id": "c-uncat",
+        "name": "Uncategorized",
+        "category_group_name": "Internal Master Category",
+    }
+    plan = writes.plan_categorization(
+        [_tx("t1", "c-uncat")],
+        [*_CATEGORIES, internal],
+        [writes.Assignment(transaction_id="t1", category_id=None)],
+    )
+    assert not plan.changes
+    assert plan.unchanged_count == 1
+
+
 def test_clearing_still_refuses_a_transfer() -> None:
     """Clearing keeps the checks a category would meet: a transfer takes none."""
     with pytest.raises(ValueError, match="transfer"):

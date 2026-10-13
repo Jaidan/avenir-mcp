@@ -17,7 +17,7 @@ from fastmcp.client.elicitation import ElicitResult
 
 from avenir_mcp import confirm, journal, retry, server
 
-from .mcp_helpers import FLAT, FORGED, accept, call, decline
+from .mcp_helpers import FLAT, FORGED, accept, asking, call, decline
 
 _CATS = [
     {"id": "c-food", "name": "Groceries"},
@@ -235,6 +235,17 @@ def test_undo_gives_a_cleared_category_back(budget: _Budget) -> None:
     call("undo_operation", {"plan_id": "b1"}, accept)
     assert budget.patches[-1] == [("t1", "c-food")]
     assert budget.transactions[0]["category_id"] == "c-food"
+
+
+@pytest.mark.usefixtures("budget")
+def test_approving_an_uncategorised_row_says_it_has_no_category() -> None:
+    """An approve-only row with no category reads "no category", not an empty name."""
+    asked: list[str] = []
+    clear = [{"transaction_id": "t1", "category_id": None}]
+    call(
+        "apply_categories", {"plan_id": "b1", "assignments": clear, "approve": True}, asking(asked)
+    )
+    assert "no category (approve)" in asked[0]
 
 
 def test_undo_keeps_the_transaction_approved(budget: _Budget) -> None:

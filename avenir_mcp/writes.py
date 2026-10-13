@@ -204,7 +204,7 @@ def _row(
         from_category_id=current,
         from_category=untrusted(names[current]) if current in names else None,
         to_category_id=category_id,
-        to_category=untrusted(names[category_id]) if category_id else None,
+        to_category=untrusted(names[category_id]) if category_id is not None else None,
         approved=approved,
     )
 
@@ -249,7 +249,10 @@ def plan_categorization(
         change = _row(
             tx, assignment.category_id, names, approved=approve or bool(tx.get("approved"))
         )
-        if change.from_category_id != change.to_category_id:
+        # YNAB's internal Uncategorized is no category: clearing it changes nothing.
+        if (None if change.from_category_id in refused[0] else change.from_category_id) != (
+            change.to_category_id
+        ):
             changes.append(change)
         elif approve and not tx.get("approved"):
             to_approve.append(change)

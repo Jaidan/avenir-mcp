@@ -119,7 +119,7 @@ def describe(plan: writes.Plan, action: str) -> str:
             f"{untrusted(c.to_category) or 'no category'}"
             for c in plan.changes
         ),
-        *(f"{untrusted(c.to_category)} (approve)" for c in plan.to_approve),
+        *(f"{untrusted(c.to_category) or 'no category'} (approve)" for c in plan.to_approve),
     ]
     every = [*plan.changes, *plan.to_approve]
     lines = [

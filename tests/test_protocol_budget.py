@@ -10,7 +10,10 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+
+from avenir_mcp import retry
 
 from .fake_month import FakeMonth, serving
 from .mcp_helpers import FLAT, FORGED, accept, asking, call, decline, one_line
@@ -280,7 +283,7 @@ def test_a_failed_first_write_changes_and_journals_nothing(many: FakeMonth, tmp_
     many.failing_calls = {1}
     result = call("set_category_budgets", _MANY, accept)
     assert result.is_error
-    assert "nothing was changed" in result.content[0].text
+    assert "Nothing was changed" in result.content[0].text
     assert not (tmp_path / "journal.jsonl").exists()
     assert not many.sets
 
@@ -335,3 +338,69 @@ def test_category_names_cannot_forge_lines_in_the_budgets_questions(many: FakeMo
     call("set_category_budgets", _MANY, accept)
     call("undo_operation", {"plan_id": "b1"}, asking(asked))
     assert one_line(asked[-1])
+
+
+def _lost() -> retry.YnabUnavailable:
+    """A write YNAB read and never answered."""
+    return retry.YnabUnavailable(retry.no_answer("patch", httpx.ReadTimeout("no answer"), 1))
+
+
+def test_an_unanswered_write_may_have_landed_and_stops_the_rest(
+    many: FakeMonth, tmp_path: Path
+) -> None:
+    """With no answer, the category may be set: the error says to check it, not that it failed."""
+    many.failure = _lost()
+    many.failing_calls = {2}
+    result = call("set_category_budgets", _MANY, accept)
+    assert result.is_error
+    text = result.content[0].text
+    assert "Leisure may have been applied: check it in YNAB" in text
+    assert "refused" not in text
+    assert "Applied: Restaurants." in text
+    assert "Not applied: Gifts." in text
+    line = json.loads((tmp_path / "journal.jsonl").read_text(encoding="utf-8"))
+    assert line["operation_id"] in text
+
+
+def test_an_unanswered_last_write_leaves_nothing_unapplied(many: FakeMonth) -> None:
+    """When the last category gets no answer, every other one is applied."""
+    many.failure = _lost()
+    many.failing_calls = {3}
+    text = call("set_category_budgets", _MANY, accept).content[0].text
+    assert "Gifts may have been applied: check it in YNAB" in text
+    assert "Not applied" not in text
+    assert "Applied: Restaurants, Leisure." in text
+
+
+def test_an_unanswered_first_write_changes_nothing_else(many: FakeMonth, tmp_path: Path) -> None:
+    """No answer on the first category: nothing else written, nothing journaled."""
+    many.failure = _lost()
+    many.failing_calls = {1}
+    text = call("set_category_budgets", _MANY, accept).content[0].text
+    assert "Restaurants may have been applied: check it in YNAB" in text
+    assert "Nothing else was changed" in text
+    assert not (tmp_path / "journal.jsonl").exists()
+
+
+def test_a_failed_undo_write_says_what_was_restored_and_can_be_retried(many: FakeMonth) -> None:
+    """The undo stops, names what is back and what is not, and stays undoable for the rest."""
+    call("set_category_budgets", _MANY, accept)
+    many.failing_calls = {5}
+    result = call("undo_operation", {"plan_id": "b1"}, accept)
+    assert result.is_error
+    text = result.content[0].text
+    assert "Restored: Restaurants." in text
+    assert "Not restored: Leisure, Gifts." in text
+    many.failing_calls = set()
+    retried = call("undo_operation", {"plan_id": "b1"}, accept).structured_content
+    assert (retried["status"], retried["conflicts"]) == ("applied", ["c-food"])
+    assert many.budgeted == {"c-food": 200000, "c-fun": 0, "c-car": 50000, "c-gift": 10000}
+
+
+def test_a_first_failed_undo_write_restores_nothing(many: FakeMonth) -> None:
+    """When the first restore fails, the error says nothing is back yet."""
+    call("set_category_budgets", _MANY, accept)
+    many.failing_calls = {4}
+    text = call("undo_operation", {"plan_id": "b1"}, accept).content[0].text
+    assert "Restored: none." in text
+    assert "Not restored: Restaurants, Leisure, Gifts." in text

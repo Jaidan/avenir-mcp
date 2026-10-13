@@ -13,7 +13,7 @@ from fastmcp.exceptions import ToolError
 from mcp.types import InputRequiredResult
 from pydantic import Field
 
-from avenir_mcp import app, client, journal
+from avenir_mcp import app, client, journal, retry
 from avenir_mcp.amounts import Amount
 from avenir_mcp.app import WRITE_TAG, check_month, mcp
 from avenir_mcp.confirm import WriteStatus, gate, merged, rows_question
@@ -229,12 +229,7 @@ async def set_category_budget(  # pylint: disable=too-many-arguments,too-many-po
     check_month(month)
     month = app.resolve_month(month)
     categories = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
-    category = categories.get(category_id)
-    if category is None:
-        raise ToolError(
-            f"Category {category_id} is not in this plan: "
-            "use a category_id from get_category_balances."
-        )
+    category = _category(categories, category_id)
     before, after = category["budgeted"], client.amount_to_milliunit(amount)
     result = BudgetChange(
         status="nothing_to_do",
@@ -317,9 +312,31 @@ class BudgetChanges(Model):
     """Journal id of the applied operation, for undo_operation; null unless status is applied."""
 
 
+def _category(categories: dict[str, dict[str, Any]], category_id: str) -> dict[str, Any]:
+    """Find a category of the month, or say where to find a valid id.
+
+    Args:
+        categories: The month's categories by id, as YNAB returns them.
+        category_id: The category the agent gave.
+
+    Returns:
+        The category, as YNAB returns it.
+
+    Raises:
+        ToolError: If it is not in the plan.
+    """
+    category = categories.get(category_id)
+    if category is None:
+        raise ToolError(
+            f"Category {category_id} is not in this plan: "
+            "use a category_id from get_category_balances."
+        )
+    return category
+
+
 def _budget_lines(
     categories: dict[str, dict[str, Any]], budgets: list[BudgetItem]
-) -> list[BudgetLine]:
+) -> tuple[list[BudgetLine], list[dict[str, Any]]]:
     """Check the categories given and keep those whose amount changes.
 
     Args:
@@ -327,76 +344,70 @@ def _budget_lines(
         budgets: The new amounts, in the order given.
 
     Returns:
-        A line per category whose amount changes, in the order given.
+        A line per category whose amount changes, in the order given, and the same
+        changes in milliunits as the journal keeps them.
 
     Raises:
         ToolError: If a category is given twice or is not in the plan.
     """
     seen: set[str] = set()
     lines = []
+    changes = []
     for item in budgets:
         if item.category_id in seen:
             raise ToolError(
                 f"Category {item.category_id} more than once: give each category one amount."
             )
         seen.add(item.category_id)
-        category = categories.get(item.category_id)
-        if category is None:
-            raise ToolError(
-                f"Category {item.category_id} is not in this plan: "
-                "use a category_id from get_category_balances."
-            )
-        after = client.amount_to_milliunit(item.amount)
-        if category["budgeted"] != after:
+        category = _category(categories, item.category_id)
+        before, after = category["budgeted"], client.amount_to_milliunit(item.amount)
+        if before != after:
             lines.append(
                 BudgetLine(
                     category_id=item.category_id,
                     category=untrusted(category["name"]),
-                    from_amount=client.milliunit_to_amount(category["budgeted"]),
+                    from_amount=client.milliunit_to_amount(before),
                     to_amount=client.milliunit_to_amount(after),
                 )
             )
-    return lines
+            changes.append({"category_id": item.category_id, "from": before, "to": after})
+    return lines, changes
 
 
-def _journal_budgets(plan_id: str, month: str, applied: list[BudgetLine]) -> str:
+def _journal_budgets(plan_id: str, month: str, applied: list[dict[str, Any]]) -> str:
     """Record the categories set as one operation, for undo_operation.
 
     Args:
         plan_id: YNAB plan id or 'last-used'.
         month: The month, YYYY-MM-01.
-        applied: The changes YNAB accepted.
+        applied: The changes YNAB accepted, in milliunits.
 
     Returns:
         The journal id of the operation.
     """
     return journal.Journal(journal.default_path()).record(
-        plan_id,
-        "budgets",
-        [],
-        {
-            "month": month,
-            "changes": [
-                {
-                    "category_id": line.category_id,
-                    "from": client.amount_to_milliunit(line.from_amount),
-                    "to": client.amount_to_milliunit(line.to_amount),
-                }
-                for line in applied
-            ],
-        },
+        plan_id, "budgets", [], {"month": month, "changes": applied}
     )
 
 
-def _stopped(
-    plan_id: str, month: str, lines: list[BudgetLine], failed: int, error: Exception
+def _stopped(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    plan_id: str,
+    month: str,
+    lines: list[BudgetLine],
+    changes: list[dict[str, Any]],
+    failed: int,
+    error: Exception,
 ) -> str:
     """Journal what was applied before a failed write, and say what was and was not.
+
+    A write YNAB refused was not applied; one it never answered may have been, and
+    the user is told to check it.
 
     Args:
         plan_id: YNAB plan id or 'last-used'.
         month: The month, YYYY-MM-01.
         lines: Every change, in the order written.
+        changes: The same changes, in milliunits.
         failed: Index of the change YNAB refused or never answered.
         error: What YNAB answered.
 
@@ -404,30 +415,37 @@ def _stopped(
         The error message, naming what was applied, what was not, and the operation_id
         that undoes the applied part.
     """
-    refused = lines[failed].category
-    left = ", ".join(line.category for line in lines[failed:])
-    if failed == 0:
-        return (
-            f"YNAB refused to change {refused} ({error}): nothing was changed. Not applied: {left}."
-        )
-    operation_id = _journal_budgets(plan_id, month, lines[:failed])
-    done = ", ".join(line.category for line in lines[:failed])
-    return (
-        f"YNAB refused to change {refused} ({error}). Applied: {done}. Not applied: {left}. "
-        f"undo_operation with operation_id {operation_id} reverts the applied part."
-    )
+    category = lines[failed].category
+    if isinstance(error, retry.YnabUnavailable):
+        parts = [f"{category} may have been applied: check it in YNAB ({error})."]
+        left = lines[failed + 1 :]
+        nothing = "Nothing else was changed."
+    else:
+        parts = [f"YNAB refused to change {category} ({error})."]
+        left = lines[failed:]
+        nothing = "Nothing was changed."
+    if failed:
+        operation_id = _journal_budgets(plan_id, month, changes[:failed])
+        parts.append(f"Applied: {', '.join(line.category for line in lines[:failed])}.")
+    else:
+        parts.append(nothing)
+    if left:
+        parts.append(f"Not applied: {', '.join(line.category for line in left)}.")
+    if failed:
+        parts.append(f"undo_operation with operation_id {operation_id} reverts the applied part.")
+    return " ".join(parts)
 
 
-async def _set_each(plan_id: str, month: str, lines: list[BudgetLine]) -> str:
+async def _set_each(
+    plan_id: str, month: str, lines: list[BudgetLine], changes: list[dict[str, Any]]
+) -> str:
     """Set each category in turn, then journal them as one operation.
-
-    `retry.YnabUnavailable` is a RuntimeError, so a write YNAB never answered stops
-    the others as a refusal does: the error carries what to check.
 
     Args:
         plan_id: YNAB plan id or 'last-used'.
         month: The month, YYYY-MM-01.
         lines: The changes, in the order to write them.
+        changes: The same changes, in milliunits, for the journal.
 
     Returns:
         The journal id of the operation.
@@ -440,8 +458,8 @@ async def _set_each(plan_id: str, month: str, lines: list[BudgetLine]) -> str:
         try:
             await client.set_category_budgeted(plan_id, month, line.category_id, line.to_amount)
         except RuntimeError as error:
-            raise ToolError(_stopped(plan_id, month, lines, index, error)) from error
-    return _journal_budgets(plan_id, month, lines)
+            raise ToolError(_stopped(plan_id, month, lines, changes, index, error)) from error
+    return _journal_budgets(plan_id, month, changes)
 
 
 @mcp.tool(
@@ -491,7 +509,7 @@ async def set_category_budgets(
     check_month(month)
     month = app.resolve_month(month)
     categories = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
-    lines = _budget_lines(categories, budgets)
+    lines, changes = _budget_lines(categories, budgets)
     result = BudgetChanges(
         status="nothing_to_do",
         message="Nothing to change.",
@@ -510,14 +528,12 @@ async def set_category_budgets(
     )
     subject = {
         "month": month,
-        "budgets": sorted(
-            (line.category_id, client.amount_to_milliunit(line.to_amount)) for line in lines
-        ),
+        "budgets": sorted((change["category_id"], change["to"]) for change in changes),
     }
     stop = await gate(ctx, plan_id, subject, question, confirmation)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
-    operation_id = await _set_each(plan_id, month, lines)
+    operation_id = await _set_each(plan_id, month, lines, changes)
     return result.model_copy(
         update={
             "status": "applied",
@@ -674,11 +690,7 @@ async def move_money(  # pylint: disable=too-many-arguments,too-many-positional-
         raise ToolError("Give two different categories: money moves from one to another.")
     categories = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
     for category_id in (from_category_id, to_category_id):
-        if category_id not in categories:
-            raise ToolError(
-                f"Category {category_id} is not in this plan: "
-                "use a category_id from get_category_balances."
-            )
+        _category(categories, category_id)
     moved = client.amount_to_milliunit(amount)
     source = _side(categories[from_category_id], -moved)
     target = _side(categories[to_category_id], moved)

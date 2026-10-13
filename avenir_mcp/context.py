@@ -49,7 +49,8 @@ GUIDE = """# avenir-mcp: how to work with this YNAB server
   `get_spending_trends` where something stands out.
 - Plan: `forecast_balance` says when money would run out; check its assumptions with
   the user. `move_money` moves money from one category to another for a month, in
-  one confirmed and undoable step; `set_category_budget` sets one category's amount.
+  one confirmed and undoable step; `set_category_budgets` sets several categories'
+  amounts with one confirmation (funding a month), `set_category_budget` just one.
 - Missing transactions: first check `list_accounts` for a broken bank link, which the
   user fixes in YNAB; then `create_transactions`. New categories: `create_category`;
   renaming or moving one: `update_category`.
@@ -248,4 +249,5 @@ def plan_next_month(plan_id: str) -> str:
 2. Call `get_category_balances` for the current month.
 3. Propose next month's budgeted amounts, category by category, so that every unit of
    currency has a job and true expenses are funded.
-4. Apply the amounts I accept with `set_category_budget`, one category at a time."""
+4. Apply the amounts I accept with `set_category_budgets`, in one confirmed call
+   (`set_category_budget` for a single category)."""

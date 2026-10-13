@@ -69,7 +69,8 @@ async def undo_operation(
 
     Raises:
         ToolError: If the journal is damaged, no operation of the plan is still in
-            effect (with that id), or the confirmation code is refused.
+            effect (with that id), the confirmation code is refused, or restoring an
+            amount fails partway (the error says which are back).
     """
     logger.info("Tool called: undo_operation")
     book = journal.Journal(journal.default_path())
@@ -212,6 +213,36 @@ async def _undo_budget(
     return result_of("applied", "Budgeted amount restored.", writes.Plan())
 
 
+async def _restore(
+    plan_id: str, month: str, changes: list[dict[str, Any]], names: dict[str, str]
+) -> None:
+    """Set each category back to its amount before, in turn.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        month: The month, YYYY-MM-01.
+        changes: The changes to revert, in milliunits, in the order to write them.
+        names: Each category's name, safe to show.
+
+    Raises:
+        ToolError: If a write fails: the operation stays in effect, and the error names
+            the categories restored and those not, so another undo_operation finishes it.
+    """
+    for index, change in enumerate(changes):
+        previous = client.milliunit_to_amount(change["from"])
+        try:
+            await client.set_category_budgeted(plan_id, month, change["category_id"], previous)
+        except RuntimeError as error:
+            restored = ", ".join(names[c["category_id"]] for c in changes[:index]) or "none"
+            left = ", ".join(names[c["category_id"]] for c in changes[index:])
+            raise ToolError(
+                f"Undo stopped: setting {names[change['category_id']]} back failed ({error}). "
+                f"Restored: {restored}. Not restored: {left}. The operation is still in "
+                "effect: undo_operation again restores the rest and lists those already "
+                "restored as conflicts."
+            ) from error
+
+
 def _move_back_question(
     current: dict[str, dict[str, Any]], changes: list[dict[str, Any]], month: str
 ) -> str:
@@ -264,9 +295,8 @@ async def _undo_move(
     )
     if refused is not None:
         return refused
-    for change in reversed(changes):
-        previous = client.milliunit_to_amount(change["from"])
-        await client.set_category_budgeted(plan_id, month, change["category_id"], previous)
+    names = {c["category_id"]: untrusted(current[c["category_id"]]["name"]) for c in changes}
+    await _restore(plan_id, month, list(reversed(changes)), names)
     book.mark_undone(entry.operation_id)
     return result_of("applied", "Both amounts restored.", writes.Plan())
 
@@ -294,18 +324,19 @@ async def _undo_budgets(
     month, changes = entry.details["month"], entry.details["changes"]
     current = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
     back = [c for c in changes if current.get(c["category_id"], {}).get("budgeted") == c["to"]]
-    moved = [c["category_id"] for c in changes if c not in back]
+    back_ids = {c["category_id"] for c in back}
+    moved = [c["category_id"] for c in changes if c["category_id"] not in back_ids]
     if not back:
         return result_of(
             "nothing_to_do",
             "Every amount changed since: left alone.",
             writes.Plan(conflicts=moved),
         )
+    names = {c["category_id"]: untrusted(current[c["category_id"]]["name"]) for c in back}
     question = rows_question(
         "Undo: budget",
         [
-            f"{untrusted(current[c['category_id']]['name'])}: "
-            f"{client.milliunit_to_amount(c['to']):.2f} → "
+            f"{names[c['category_id']]}: {client.milliunit_to_amount(c['to']):.2f} → "
             f"{client.milliunit_to_amount(c['from']):.2f}"
             for c in back
         ],
@@ -314,9 +345,7 @@ async def _undo_budgets(
     refused = await _confirm_undo(ctx, plan_id, entry, question, confirmation)
     if refused is not None:
         return refused
-    for change in back:
-        previous = client.milliunit_to_amount(change["from"])
-        await client.set_category_budgeted(plan_id, month, change["category_id"], previous)
+    await _restore(plan_id, month, back, names)
     book.mark_undone(entry.operation_id)
     return result_of("applied", "Budgeted amounts restored.", writes.Plan(conflicts=moved))
 

@@ -128,8 +128,8 @@ Any tool that reaches YNAB can return YNAB's own error: `Error calling tool '<to
 ## [`move_money`](/avenir-mcp/reference/tools/move-money/)
 
 - `Give two different categories: money moves from one to another.`
-- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `month must be 'current' or the first day of a month as YYYY-MM-01, got '{month}'.`
+- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `{refused}; {name} is back to {from_amount}: nothing was moved.`
 - `{refused}, then putting {name} back failed too ({again}): set {name} back to {from_amount} in YNAB.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
@@ -160,8 +160,8 @@ Any tool that reaches YNAB can return YNAB's own error: `Error calling tool '<to
 
 ## [`set_category_budget`](/avenir-mcp/reference/tools/set-category-budget/)
 
-- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `month must be 'current' or the first day of a month as YYYY-MM-01, got '{month}'.`
+- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
 - `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
 - `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
@@ -212,6 +212,7 @@ Any tool that reaches YNAB can return YNAB's own error: `Error calling tool '<to
 
 - `Nothing to undo: no operation of this plan is still in effect with id {operation_id}.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
+- `Undo stopped: setting {name} back failed ({error}). Restored: {restored}. Not restored: {left}. The operation is still in effect: undo_operation again restores the rest and lists those already restored as conflicts.`
 - `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
 - `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
 - `The plan changed between the preview and the answer. Call again without an answer to get a new preview.`

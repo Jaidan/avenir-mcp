@@ -229,7 +229,7 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
         "adjust": difference,
         "transactions": to_reconcile,
     }
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     keeps = writes.approvals(transactions)
@@ -641,7 +641,7 @@ async def create_transactions(  # pylint: disable=too-many-arguments,too-many-po
     ]
     question = f"Create {len(preview)} transaction(s) on {result.account}?\n" + "\n".join(lines)
     subject = {"account": account_id, "items": transactions, "approved": approved}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     created = await client.create_transactions(

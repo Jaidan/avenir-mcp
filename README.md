@@ -164,6 +164,16 @@ pull request. Security reports: [SECURITY.md](SECURITY.md). Also:
 [ARCHITECTURE.md](ARCHITECTURE.md), [ROADMAP.md](ROADMAP.md),
 [GOVERNANCE.md](GOVERNANCE.md) and the [code of conduct](CODE_OF_CONDUCT.md).
 
+## Fork changes
+
+This fork adds `AVENIR_MCP_AUTO_CONFIRM=1`, which upstream does not have: upstream never
+writes without the user's yes. With it set, a write that `undo_operation` can revert
+applies without asking, and the server logs a warning for each one. Writes undo cannot
+revert still ask (`split_transaction`, `create_category`, `update_category`, approving by
+dates, `apply_categories` with `approve`, a target YNAB cannot set back, and every undo).
+It cannot be combined with `AVENIR_MCP_REQUIRE_ELICITATION=1`. See
+[Configuration](https://avenir-mcp.pages.dev/avenir-mcp/reference/configuration/).
+
 ## Licence
 
 MIT.

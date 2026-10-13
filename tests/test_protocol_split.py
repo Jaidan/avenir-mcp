@@ -180,3 +180,13 @@ def test_a_code_for_splitting_cannot_approve(ynab: AsyncMock) -> None:
     result = call("split_transaction", _args(approve=True, confirmation=code))
     assert result.is_error
     ynab.assert_not_called()
+
+
+def test_auto_confirm_still_asks_before_a_split(
+    ynab: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AVENIR_MCP_AUTO_CONFIRM=1 skips only undoable writes: undo cannot revert a split."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    preview = call("split_transaction", _args()).structured_content
+    assert preview["status"] == "confirmation_required"
+    ynab.assert_not_called()

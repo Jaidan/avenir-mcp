@@ -267,3 +267,13 @@ def test_a_window_over_a_year_is_refused_before_any_read(ynab: FakeYnab) -> None
     assert result.is_error
     assert "366 days" in result.content[0].text
     assert ynab.reads == 0
+
+
+def test_auto_confirm_still_asks_before_approving_a_period(
+    ynab: FakeYnab, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Approvals cannot be undone: AVENIR_MCP_AUTO_CONFIRM=1 still asks."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    found = call("approve_transactions", _september()).structured_content
+    assert found["status"] == "confirmation_required"
+    assert ynab.approved == []

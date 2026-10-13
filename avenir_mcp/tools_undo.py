@@ -102,7 +102,9 @@ async def undo_operation(
     transactions = await client.get_transactions(plan_id)
     categories = await client.get_categories(plan_id)
     plan = writes.plan_undo(transactions, categories, entry.moves)
-    result, new_operation = await write_plan(ctx, plan_id, plan, "Undo: recategorise", confirmation)
+    result, new_operation = await write_plan(
+        ctx, plan_id, plan, "Undo: recategorise", confirmation, undoable=False
+    )
     if new_operation is not None:
         book.mark_undone(entry.operation_id)
         book.mark_undone(new_operation)
@@ -124,7 +126,9 @@ async def _confirm_undo(
     Returns:
         None when the user agreed; otherwise what to return instead of undoing.
     """
-    decision = await ask(ctx, plan_id, {"undo": entry.operation_id}, question, confirmation)
+    decision = await ask(
+        ctx, plan_id, {"undo": entry.operation_id}, question, confirmation, undoable=False
+    )
     if isinstance(decision, InputRequiredResult):
         return decision
     outcome = not_applied(decision, question)

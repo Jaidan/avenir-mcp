@@ -18,6 +18,7 @@ block or in the shell that starts it. Nothing else is read: no configuration fil
 | `YNAB_API_KEY_FILE` | unset | A file holding the token, used when `YNAB_API_KEY` is unset. |
 | `AVENIR_MCP_WRITE` | unset: read-only | `1` registers the tools that change your plan. |
 | `AVENIR_MCP_REQUIRE_ELICITATION` | unset | `1` accepts only a yes given in the client: no confirmation codes. |
+| `AVENIR_MCP_AUTO_CONFIRM` | unset | `1` (this fork only) applies writes `undo_operation` can revert without asking. |
 | `AVENIR_MCP_TRANSPORT` | `stdio` | `stdio` or `http`. |
 | `AVENIR_MCP_HOST` | `127.0.0.1` | HTTP address. |
 | `AVENIR_MCP_PORT` | `8103` | HTTP port. |
@@ -77,6 +78,15 @@ confirmation box. Confirmation codes are neither issued nor accepted, a dismisse
 question counts as no, and a client that cannot ask gets an error. Use it when the model
 might relay a code without asking you — see
 [Confirmation](/avenir-mcp/concepts/confirmation/#requiring-the-users-own-answer).
+
+### `AVENIR_MCP_AUTO_CONFIRM`
+
+Exactly `1`, in this fork only: a write that `undo_operation` can revert applies at once,
+without a confirmation box or a code, and the server logs a warning naming it. Writes undo
+cannot revert still ask: `split_transaction`, `create_category`, `update_category`,
+approving by dates, `apply_categories` with `approve`, a target YNAB cannot set back, and
+every undo. A confirmation code you pass is still checked. It cannot be combined with
+`AVENIR_MCP_REQUIRE_ELICITATION=1`: the server refuses to start.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`
 

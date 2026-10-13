@@ -257,15 +257,23 @@ async def _answer_in_client(
     return _answer(answer.action, {"value": getattr(answer, "data", None)})
 
 
-async def ask(
-    ctx: Context, plan_id: str, subject: object, question: str, confirmation: str | None
+async def ask(  # pylint: disable=too-many-arguments
+    ctx: Context,
+    plan_id: str,
+    subject: object,
+    question: str,
+    confirmation: str | None,
+    *,
+    undoable: bool,
 ) -> WriteStatus | str | types.InputRequiredResult:
     """Confirm a write with the user.
 
     `subject` is the exact change being confirmed: a code, or an answer, only ever
     confirms it. With AVENIR_MCP_REQUIRE_ELICITATION=1 only the user's answer in the
     client counts: an agent could relay a code without asking, so codes are neither
-    issued nor accepted.
+    issued nor accepted. With AVENIR_MCP_AUTO_CONFIRM=1 (this fork only) a write that
+    undo_operation can revert applies without asking, logged as a warning, unless
+    AVENIR_MCP_REQUIRE_ELICITATION=1 is set too; a code passed in is still checked.
 
     Args:
         ctx: The MCP context of the call.
@@ -273,6 +281,9 @@ async def ask(
         subject: The exact change being confirmed, as JSON data.
         question: What the user is asked.
         confirmation: A code from a previous preview, or None.
+        undoable: False when undo_operation cannot revert the write (or the write is
+            an undo): the user is asked even with AVENIR_MCP_AUTO_CONFIRM=1. Required,
+            so that no write skips the question by omission.
 
     Returns:
         "applied" when the user agreed, "declined", a code to confirm later, or an
@@ -285,6 +296,11 @@ async def ask(
     required = os.getenv("AVENIR_MCP_REQUIRE_ELICITATION") == "1"
     if confirmation is not None:
         return _spend_code(confirmation, plan_id, subject, required)
+    if undoable and not required and os.getenv("AVENIR_MCP_AUTO_CONFIRM") == "1":
+        # Only a size: the question carries bank text (payees, categories, accounts).
+        size = len(subject) if isinstance(subject, list) else 1
+        logger.warning("Auto-confirmed a write of %d item(s) (AVENIR_MCP_AUTO_CONFIRM=1)", size)
+        return "applied"
     can_ask = ctx.session.check_client_capability(
         types.ClientCapabilities(elicitation=types.ElicitationCapability())
     )
@@ -304,12 +320,14 @@ async def ask(
     return "declined" if required else CONFIRMATIONS.issue(plan_id, subject)
 
 
-async def write_plan(
+async def write_plan(  # pylint: disable=too-many-arguments
     ctx: Context,
     plan_id: str,
     plan: writes.Plan,
     action: str,
     confirmation: str | None,
+    *,
+    undoable: bool,
 ) -> tuple[WriteResult | types.InputRequiredResult, str | None]:
     """Confirm a recategorisation plan, apply it and journal it.
 
@@ -323,6 +341,8 @@ async def write_plan(
         plan: The changes to make, and the transactions to approve.
         action: What is done to them, e.g. "Recategorise", for the question.
         confirmation: A code from a previous preview, or None.
+        undoable: False when undo_operation cannot revert it all (approvals, an undo):
+            asked even with AVENIR_MCP_AUTO_CONFIRM=1.
 
     Returns:
         The result (or the input request to return), and the new operation's id when
@@ -336,7 +356,12 @@ async def write_plan(
         )
         return result_of("nothing_to_do", message, plan), None
     decision = await ask(
-        ctx, plan_id, writes.subject_of(plan), describe(plan, action), confirmation
+        ctx,
+        plan_id,
+        writes.subject_of(plan),
+        describe(plan, action),
+        confirmation,
+        undoable=undoable,
     )
     if isinstance(decision, types.InputRequiredResult):
         return decision, None
@@ -421,8 +446,14 @@ def not_applied(decision: WriteStatus | str, question: str) -> NotApplied | None
     )
 
 
-async def gate(
-    ctx: Context, plan_id: str, subject: object, question: str, confirmation: str | None
+async def gate(  # pylint: disable=too-many-arguments
+    ctx: Context,
+    plan_id: str,
+    subject: object,
+    question: str,
+    confirmation: str | None,
+    *,
+    undoable: bool,
 ) -> NotApplied | types.InputRequiredResult | None:
     """Ask for confirmation before a write.
 
@@ -435,11 +466,13 @@ async def gate(
         subject: The exact change being confirmed, as JSON data.
         question: What the user is asked.
         confirmation: A code from a previous preview, or None.
+        undoable: False when undo_operation cannot revert the write: asked even with
+            AVENIR_MCP_AUTO_CONFIRM=1.
 
     Returns:
         None when the write may proceed; otherwise what to return instead.
     """
-    decision = await ask(ctx, plan_id, subject, question, confirmation)
+    decision = await ask(ctx, plan_id, subject, question, confirmation, undoable=undoable)
     if isinstance(decision, types.InputRequiredResult):
         return decision
     return not_applied(decision, question)

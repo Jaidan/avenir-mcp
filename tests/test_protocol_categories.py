@@ -247,3 +247,22 @@ def test_a_category_name_that_would_break_the_line_is_refused(create: AsyncMock,
     assert result.is_error
     assert "line break" in result.content[0].text
     create.assert_not_awaited()
+
+
+def test_auto_confirm_still_asks_before_creating_a_category(
+    create: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """undo_operation cannot delete a category: AVENIR_MCP_AUTO_CONFIRM=1 still asks."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    assert _create_call(_NEW).structured_content["status"] == "confirmation_required"
+    create.assert_not_awaited()
+
+
+def test_auto_confirm_still_asks_before_updating_a_category(
+    update: AsyncMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """undo_operation cannot rename a category back: AVENIR_MCP_AUTO_CONFIRM=1 still asks."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    args = {"plan_id": "b1", "category_id": "c-pharma", "name": "Pharmacy"}
+    assert _call(args).structured_content["status"] == "confirmation_required"
+    update.assert_not_awaited()

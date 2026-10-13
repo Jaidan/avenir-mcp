@@ -404,3 +404,23 @@ def test_a_first_failed_undo_write_restores_nothing(many: FakeMonth) -> None:
     text = call("undo_operation", {"plan_id": "b1"}, accept).content[0].text
     assert "Restored: none." in text
     assert "Not restored: Restaurants, Leisure, Gifts." in text
+
+
+def test_auto_confirm_applies_a_budget_change_at_once(
+    month: FakeMonth, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AVENIR_MCP_AUTO_CONFIRM=1: an undoable write applies in the first call."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    assert call("set_category_budget", _ARGS).structured_content["status"] == "applied"
+    assert month.sets == [("2026-10-01", "c-food", 150.0)]
+
+
+def test_auto_confirm_still_asks_before_an_undo(
+    month: FakeMonth, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An undo cannot itself be undone: AVENIR_MCP_AUTO_CONFIRM=1 still asks."""
+    call("set_category_budget", _ARGS, accept)
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    undo = call("undo_operation", {"plan_id": "b1"}).structured_content
+    assert undo["status"] == "confirmation_required"
+    assert month.sets == [("2026-10-01", "c-food", 150.0)]

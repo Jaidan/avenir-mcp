@@ -578,7 +578,9 @@ async def approve_transactions(  # pylint: disable=too-many-arguments,too-many-p
         {"exclude": excluded},
         *(_subject_row(tx) for tx in rows),
     ]
-    stop = await gate(ctx, plan_id, subject, _approval_question(rows, matches), confirmation)
+    stop = await gate(
+        ctx, plan_id, subject, _approval_question(rows, matches), confirmation, undoable=False
+    )
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     done = await client.approve_transactions(plan_id, [tx["id"] for tx in rows])

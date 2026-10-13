@@ -165,7 +165,7 @@ async def rename_payee(
         f"{plan.transactions} transaction(s) name it."
     )
     subject = {"payee_id": plan.payee_id, "name": plan.to_name}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await client.rename_payee(plan_id, plan.payee_id, plan.to_name)

@@ -140,7 +140,7 @@ async def update_category(  # pylint: disable=too-many-arguments
         f"Change category '{result.from_name}' ({result.from_group}) "
         f"to '{result.to_name}' ({result.to_group})?"
     )
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=False)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await client.update_category(
@@ -248,7 +248,7 @@ async def set_category_budget(  # pylint: disable=too-many-arguments,too-many-po
         f"Budget {result.category} for {month}: {result.from_amount:.2f} → {result.to_amount:.2f}?"
     )
     subject = {"category": category_id, "month": month, "amount": after}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await client.set_category_budgeted(plan_id, month, category_id, amount)
@@ -530,7 +530,7 @@ async def set_category_budgets(
         "month": month,
         "budgets": sorted((change["category_id"], change["to"]) for change in changes),
     }
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     operation_id = await _set_each(plan_id, month, lines, changes)
@@ -710,7 +710,7 @@ async def move_money(  # pylint: disable=too-many-arguments,too-many-positional-
         f"- {target.name}: {target.from_amount:.2f} → {target.to_amount:.2f}"
     )
     subject = {"from": from_category_id, "to": to_category_id, "month": month, "amount": moved}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await _set_both(plan_id, month, source, target)
@@ -824,7 +824,7 @@ async def create_category(
     )
     question = f"Create category '{result.name}' in {result.group}?"
     subject = {"group": category_group_id, "name": new_name}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=False)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     created = await client.create_category(plan_id, category_group_id, new_name)

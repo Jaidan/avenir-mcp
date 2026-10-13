@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastmcp import Client
 
-from avenir_mcp import server
+from avenir_mcp import context, server
 
 _BUDGETS = [{"id": "b1", "name": "Personal", "last_modified_on": "2026-09-24", "extra": "x"}]
 _CATS = [
@@ -182,3 +182,31 @@ def test_prompts_carry_their_arguments_and_only_real_tools(
     named = _named_tools(text)
     assert must_name <= named
     assert named <= _tool_names()
+
+
+def test_without_auto_confirm_the_guide_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default guide is byte for byte the one written: every write waits for a yes."""
+    monkeypatch.delenv("AVENIR_MCP_AUTO_CONFIRM", raising=False)
+    assert context.guide_text(auto_confirm=False) is context.GUIDE
+    assert _read("avenir-mcp://guide") == context.GUIDE
+    assert "Every write shows a preview and waits for the user's confirmation" in context.GUIDE
+
+
+def test_with_auto_confirm_the_guide_says_what_still_asks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AVENIR_MCP_AUTO_CONFIRM=1 (fork only): undoable writes apply at once, the rest ask."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    raw = _read("avenir-mcp://guide")
+    assert raw == context.guide_text(auto_confirm=True)
+    text = " ".join(raw.split())
+    assert "Every write shows a preview" not in text
+    assert "apply at once" in text
+    assert "`undo_operation` can revert" in text
+    for still_asks in (
+        "Splits",
+        "creating or editing categories",
+        "approving by dates",
+        "`apply_categories` with `approve`",
+        "undos",
+    ):
+        assert still_asks in text
+    assert "never use a code on your own initiative" in text

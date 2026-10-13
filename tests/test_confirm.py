@@ -52,7 +52,8 @@ class _Ctx:
 
 
 def _ask(ctx: _Ctx, subject: object = "change") -> Any:
-    return asyncio.run(confirm.ask(ctx, "b1", subject, "Apply?", None))  # type: ignore[arg-type]
+    run = confirm.ask(ctx, "b1", subject, "Apply?", None, undoable=True)  # type: ignore[arg-type]
+    return asyncio.run(run)
 
 
 def test_older_protocol_asks_during_the_call() -> None:
@@ -94,9 +95,9 @@ def _required(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_required_client_confirmation_refuses_codes() -> None:
     """A code could be relayed by the agent alone: it is refused."""
     code = confirm.CONFIRMATIONS.issue("b1", "change")
-    ctx = _Ctx("2025-11-25")
+    ctx: Any = _Ctx("2025-11-25")
     with pytest.raises(ToolError, match="AVENIR_MCP_REQUIRE_ELICITATION"):
-        asyncio.run(confirm.ask(ctx, "b1", "change", "Apply?", code))  # type: ignore[arg-type]
+        asyncio.run(confirm.ask(ctx, "b1", "change", "Apply?", code, undoable=True))
 
 
 @pytest.mark.usefixtures("required")
@@ -159,7 +160,7 @@ def _approving(txs: list[dict[str, Any]], order: slice = slice(None)) -> writes.
 
 def _write(ctx: _Ctx, plan: writes.Plan) -> Any:
     action = "Recategorise and approve"
-    run = confirm.write_plan(ctx, "b1", plan, action, None)  # type: ignore[arg-type]
+    run = confirm.write_plan(ctx, "b1", plan, action, None, undoable=True)  # type: ignore[arg-type]
     return asyncio.run(run)[0]
 
 
@@ -246,3 +247,82 @@ def test_a_list_names_what_it_counts() -> None:
     """Rows other than transactions are counted under their own name."""
     question = confirm.rows_question("Budget", ["a"], "categories for 2026-10-01")
     assert question == "Budget 1 categories for 2026-10-01?\n- a"
+
+
+# ---------------------------------------------------------------------------
+# AVENIR_MCP_AUTO_CONFIRM=1 (fork only): undoable writes apply without asking
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="auto")
+def _auto(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+
+
+@dataclass
+class _NeverAsk(_Ctx):
+    """A client whose user must not be asked."""
+
+    async def elicit(self, _question: str, _response_type: type) -> Any:
+        """Fail the test: auto-confirm asks nobody."""
+        pytest.fail("auto-confirm asked the user")
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_applies_without_asking(caplog: pytest.LogCaptureFixture) -> None:
+    """No question, no code: applied, and one warning giving only the size, no bank text."""
+    question = "Recategorise 3 transaction(s)?\n- 2026-09-02 Corner Shop -7.25: Groceries"
+    with caplog.at_level("WARNING", logger="avenir_mcp.confirm"):
+        ctx: Any = _NeverAsk("2025-11-25")
+        assert (
+            asyncio.run(confirm.ask(ctx, "b1", ["a", "b", "c"], question, None, undoable=True))
+            == "applied"
+        )
+    assert [r.getMessage() for r in caplog.records] == [
+        "Auto-confirmed a write of 3 item(s) (AVENIR_MCP_AUTO_CONFIRM=1)"
+    ]
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_applies_on_a_modern_connection_too() -> None:
+    """No input request is returned: the call applies at once."""
+    assert _ask(_NeverAsk("2026-07-28")) == "applied"
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_still_asks_before_a_write_undo_cannot_revert() -> None:
+    """undoable=False: the user is asked as usual."""
+    ctx = _Ctx("2025-11-25", answer=AcceptedElicitation(data=False))
+    run = confirm.ask(ctx, "b1", "change", "Apply?", None, undoable=False)  # type: ignore[arg-type]
+    assert asyncio.run(run) == "declined"
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_checks_a_code_it_was_given() -> None:
+    """A code passed in is spent as usual: a wrong one is refused, not ignored."""
+    ctx: Any = _NeverAsk("2025-11-25")
+    with pytest.raises(ToolError, match="unknown, expired"):
+        asyncio.run(confirm.ask(ctx, "b1", "change", "Apply?", "made-up", undoable=True))
+    code = confirm.CONFIRMATIONS.issue("b1", "change")
+    assert asyncio.run(confirm.ask(ctx, "b1", "change", "Apply?", code, undoable=True)) == "applied"
+
+
+def test_auto_confirm_is_off_unless_set_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Any other value asks as usual."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "true")
+    assert _ask(_Ctx("2025-11-25", answer=AcceptedElicitation(data=False))) == "declined"
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_logs_one_item_for_a_single_change(caplog: pytest.LogCaptureFixture) -> None:
+    """A subject that is not a list counts as one item."""
+    with caplog.at_level("WARNING", logger="avenir_mcp.confirm"):
+        assert _ask(_NeverAsk("2025-11-25"), {"category": "c1"}) == "applied"
+    assert "1 item(s)" in caplog.text
+    assert "c1" not in caplog.text
+
+
+@pytest.mark.usefixtures("auto", "required")
+def test_auto_confirm_never_overrides_required_elicitation() -> None:
+    """Both set (server.main refuses this): ask() still asks the user in the client."""
+    assert _ask(_Ctx("2025-11-25", answer=AcceptedElicitation(data=False))) == "declined"

@@ -573,3 +573,42 @@ def test_undo_of_an_approving_operation_keeps_the_approval(budget: _Budget) -> N
     call("undo_operation", {"plan_id": "b1"}, accept)
     assert budget.patches[-1] == [("t1", None)]
     assert budget.transactions[0]["approved"] is True
+
+
+# ---------------------------------------------------------------------------
+# AVENIR_MCP_AUTO_CONFIRM=1 (fork only)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="auto")
+def _auto(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_applies_a_recategorisation_at_once(budget: _Budget) -> None:
+    """Undoable: applied in the first call, with an operation to undo."""
+    data = call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}).structured_content
+    assert data["status"] == "applied"
+    assert data["operation_id"]
+    assert budget.patches == [[("t1", "c-food")]]
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_still_asks_before_approving(budget: _Budget) -> None:
+    """approve=true: approvals are not journaled, so the user is asked."""
+    args = {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}
+    assert call("apply_categories", args).structured_content["status"] == "confirmation_required"
+    assert not budget.patches
+    assert not budget.approved_ids
+
+
+def test_auto_confirm_still_asks_before_a_category_undo(
+    budget: _Budget, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An undo cannot itself be undone: the recategorisation undo still asks."""
+    call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}, accept)
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    data = call("undo_operation", {"plan_id": "b1"}).structured_content
+    assert data["status"] == "confirmation_required"
+    assert len(budget.patches) == 1

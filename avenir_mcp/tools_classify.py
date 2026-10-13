@@ -171,7 +171,9 @@ async def apply_categories(
     except ValueError as error:
         raise ToolError(str(error)) from error
     action = "Recategorise and approve" if approve else "Recategorise"
-    result, operation_id = await write_plan(ctx, plan_id, plan, action, confirmation)
+    result, operation_id = await write_plan(
+        ctx, plan_id, plan, action, confirmation, undoable=not approve
+    )
     if not isinstance(result, WriteResult) or result.status != "applied" or not approve:
         return result
     await _approve(plan_id, plan.to_approve, operation_id)
@@ -313,7 +315,7 @@ async def split_transaction(  # pylint: disable=too-many-arguments,too-many-posi
         raise ToolError(str(error)) from error
     result = SplitResult(**plan.model_dump(), status="applied", message="", confirmation=None)
     subject = {"transaction": transaction_id, "lines": lines, "approve": approve}
-    stop = await gate(ctx, plan_id, subject, _question(plan, approve), confirmation)
+    stop = await gate(ctx, plan_id, subject, _question(plan, approve), confirmation, undoable=False)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     approved = approve or writes.approvals(transactions)[transaction_id]

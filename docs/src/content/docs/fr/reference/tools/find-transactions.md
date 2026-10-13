@@ -38,7 +38,7 @@ instructions.
 |---|---|---|---|---|
 | `plan_id` | string | oui | — | YNAB plan id or 'last-used'. |
 | `since_date` | string | oui | — | First date, YYYY-MM-DD, included. |
-| `until_date` | string \| null | non | `null` | Last date, YYYY-MM-DD, included; omit for today. |
+| `until_date` | string \| null | non | `null` | Last date, YYYY-MM-DD, included; omit for today, or for a year after since_date when that comes first (the result says which). |
 | `amount` | number \| null | non | `null` | Exact amount in currency units (negative for spending); omit for any. |
 | `account_ids` | array of string \| null | non | `null` | Accounts to search (from list_accounts); omit for all. |
 | `category_ids` | array of string \| null | non | `null` | Categories to search (from get_category_balances); a split transaction with a line in one of them is found. Omit for all. |
@@ -64,12 +64,13 @@ instructions.
 | `transactions[].cleared` | string | cleared, uncleared or reconciled. |
 | `transactions[].approved` | boolean | False while it waits for review in YNAB. |
 | `truncated` | boolean | True when more transactions match than the limit: narrow the search. |
+| `until_date` | string | Last date searched, YYYY-MM-DD: without until_date, today or a year after since_date, whichever comes first. |
 
 ## Erreurs
 
-- `Account {0} is not in this plan: use an id from list_accounts.`
-- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 - `until_date {until} is before since_date {since}: swap them.`
 - `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 
 Les erreurs propres à YNAB reviennent sous la forme `Error calling tool '<tool>': YNAB <status>: <detail>`.

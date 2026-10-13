@@ -13,10 +13,10 @@ Jedes Tool, das YNAB aufruft, kann den Fehler von YNAB zurückgeben: `Error call
 
 ## [`find_transactions`](/avenir-mcp/de/reference/tools/find-transactions/)
 
-- `Account {0} is not in this plan: use an id from list_accounts.`
-- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 - `until_date {until} is before since_date {since}: swap them.`
 - `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 
 ## [`forecast_balance`](/avenir-mcp/de/reference/tools/forecast-balance/)
 
@@ -53,10 +53,10 @@ Jedes Tool, das YNAB aufruft, kann den Fehler von YNAB zurückgeben: `Error call
 
 ## [`list_scheduled_transactions`](/avenir-mcp/de/reference/tools/list-scheduled-transactions/)
 
-- `Account {0} is not in this plan: use an id from list_accounts.`
-- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 - `until_date {until} is before since_date {since}: swap them.`
 - `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 
 ## [`suggest_categories`](/avenir-mcp/de/reference/tools/suggest-categories/)
 

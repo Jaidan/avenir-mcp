@@ -359,7 +359,8 @@ async def find_transactions(  # pylint: disable=too-many-arguments,too-many-posi
     Args:
         plan_id: YNAB plan id or 'last-used'.
         since_date: First date, YYYY-MM-DD, included.
-        until_date: Last date, YYYY-MM-DD, included; omit for today.
+        until_date: Last date, YYYY-MM-DD, included; omit for today, or for a year
+            after since_date when that comes first (the result says which).
         amount: Exact amount in currency units (negative for spending); omit for any.
         account_ids: Accounts to search (from list_accounts); omit for all.
         category_ids: Categories to search (from get_category_balances); a split
@@ -382,7 +383,7 @@ async def find_transactions(  # pylint: disable=too-many-arguments,too-many-posi
             a category is not in the plan.
     """
     logger.info("Tool called: find_transactions(since=%s)", since_date)
-    until = until_date or app.today()
+    until = until_date or min(app.today(), since_date + timedelta(days=search.MAX_DAYS))
     accounts = await client.get_accounts(plan_id)
     try:
         search.check(since_date, until, account_ids, {a["id"]: a["name"] for a in accounts})

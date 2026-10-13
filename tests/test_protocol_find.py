@@ -45,8 +45,26 @@ def test_find_reads_once_from_the_start_date(read: AsyncMock) -> None:
 def test_until_defaults_to_today(read: AsyncMock) -> None:
     """Without until_date, the search ends today."""
     args = {"plan_id": "b1", "since_date": "2026-09-13"}
-    assert call("find_transactions", args).structured_content["transactions"] == []
+    found = call("find_transactions", args).structured_content
+    assert (found["transactions"], found["until_date"]) == ([], "2026-09-26")
     assert read.await_count == 1
+
+
+def test_open_ended_search_stops_a_year_after_since(read: AsyncMock) -> None:
+    """Without until_date, a start older than a year searches its first year, and says so."""
+    args = {"plan_id": "b1", "since_date": "2025-01-01"}
+    found = call("find_transactions", args).structured_content
+    assert (found["transactions"], found["until_date"]) == ([], "2026-01-02")
+    read.assert_awaited_once_with("b1", since_date="2025-01-01")
+
+
+def test_an_explicit_range_over_a_year_is_still_refused(read: AsyncMock) -> None:
+    """Only an open end is clamped: a range the agent gave is its own."""
+    args = {"plan_id": "b1", "since_date": "2025-01-01", "until_date": "2026-09-01"}
+    result = call("find_transactions", args)
+    assert result.is_error
+    assert "366 days" in result.content[0].text
+    read.assert_not_awaited()
 
 
 def test_a_bad_window_is_refused_before_any_request(read: AsyncMock) -> None:

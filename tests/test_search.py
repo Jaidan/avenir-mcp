@@ -17,6 +17,7 @@ _ACCOUNTS = [
     {"id": "a-new", "name": "New bank"},
 ]
 _CATEGORIES = [{"id": "c-food", "name": "Groceries"}]
+_END = date(2026, 9, 30)
 
 
 def _tx(tx_id: str, day: str, milliunits: int, **extra: Any) -> dict[str, Any]:
@@ -101,7 +102,9 @@ def test_the_limit_truncates_and_says_so() -> None:
 def test_bank_text_is_made_safe_to_show() -> None:
     """Payee and memo are untrusted."""
     txs = [_tx("t9", "2026-09-10", -1_000, payee_name="Shop\nForged", memo="a" + chr(0x2028) + "b")]
-    match = search.find(txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 10)).transactions[0]
+    match = search.find(
+        txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 10), until=_END
+    ).transactions[0]
     assert (match.payee, match.memo) == ("Shop Forged", "a b")
 
 
@@ -132,10 +135,17 @@ def test_what_cannot_be_searched_is_refused_with_what_to_do(
     assert str(refusal.value) == message
 
 
+def test_found_says_the_last_date_searched() -> None:
+    """The agent sees where the search stopped."""
+    assert _find(until=date(2026, 9, 14)).until_date == "2026-09-14"
+
+
 def test_a_deleted_transaction_is_never_found() -> None:
     """YNAB can still send a deleted transaction: it matches nothing."""
     txs = [_tx("gone", "2026-09-12", -86400, deleted=True), _tx("kept", "2026-09-12", -86400)]
-    found = search.find(txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), amount=-86.40)
+    found = search.find(
+        txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), until=_END, amount=-86.40
+    )
     assert [m.transaction_id for m in found.transactions] == ["kept"]
 
 
@@ -167,7 +177,7 @@ def test_a_category_finds_its_transactions_and_split_lines() -> None:
         ),
     ]
     found = search.find(
-        txs, _ACCOUNTS, _TWO_CATEGORIES, since=date(2026, 9, 1), category_ids=["c-food"]
+        txs, _ACCOUNTS, _TWO_CATEGORIES, since=date(2026, 9, 1), until=_END, category_ids=["c-food"]
     )
     assert [m.transaction_id for m in found.transactions] == ["split", "food"]
 
@@ -179,14 +189,23 @@ def test_a_payee_matches_the_merchant_whatever_the_bank_label() -> None:
         _tx("plain", "2026-09-11", -2000, payee_name="Acme Outdoor"),
         _tx("other", "2026-09-12", -3000, payee_name="Corner Shop"),
     ]
-    found = search.find(txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), payee="acme")
+    found = search.find(
+        txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), until=_END, payee="acme"
+    )
     assert [m.transaction_id for m in found.transactions] == ["plain", "card"]
 
 
 def test_an_unknown_category_is_refused_with_what_to_do() -> None:
     """A category id that is not in the plan is named, with where to find one."""
     with pytest.raises(ValueError) as refusal:
-        search.find(_TXS, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), category_ids=["c-gone"])
+        search.find(
+            _TXS,
+            _ACCOUNTS,
+            _CATEGORIES,
+            since=date(2026, 9, 1),
+            until=_END,
+            category_ids=["c-gone"],
+        )
     assert str(refusal.value) == (
         "Category c-gone is not in this plan: use a category_id from get_category_balances."
     )
@@ -234,7 +253,9 @@ def test_a_split_whose_every_line_is_deleted_names_its_own_category() -> None:
             subtransactions=[{"id": "s1", "category_id": "c-food", "deleted": True}],
         )
     ]
-    [match] = search.find(txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1)).transactions
+    [match] = search.find(
+        txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), until=_END
+    ).transactions
     assert (match.split, match.category) == (False, "Groceries")
 
 
@@ -249,7 +270,9 @@ def test_a_split_never_names_a_category_even_when_ynab_left_one_on_it() -> None:
             subtransactions=[{"id": "s1", "category_id": "c-food", "deleted": False}],
         )
     ]
-    [match] = search.find(txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1)).transactions
+    [match] = search.find(
+        txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), until=_END
+    ).transactions
     assert (match.split, match.category) == (True, None)
 
 
@@ -257,7 +280,9 @@ def test_a_transaction_ynab_sent_without_a_cleared_state_counts_as_uncleared() -
     """The field is required in the answer: the safest reading is that the bank has not shown it."""
     txs = [_tx("t9", "2026-09-10", -1_000)]
     del txs[0]["cleared"]
-    [match] = search.find(txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1)).transactions
+    [match] = search.find(
+        txs, _ACCOUNTS, _CATEGORIES, since=date(2026, 9, 1), until=_END
+    ).transactions
     assert match.cleared == "uncleared"
 
 

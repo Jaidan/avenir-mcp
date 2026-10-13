@@ -42,11 +42,14 @@ class Found(Model):
     """Newest first."""
     truncated: bool
     """True when more transactions match than the limit: narrow the search."""
+    until_date: str
+    """Last date searched, YYYY-MM-DD: without until_date, today or a year after
+    since_date, whichever comes first."""
 
 
 def check(
     since: date,
-    until: date | None,
+    until: date,
     account_ids: list[str] | None,
     names: dict[str, str],
     categories: tuple[list[str] | None, dict[str, str]] = (None, {}),
@@ -55,7 +58,7 @@ def check(
 
     Args:
         since: First date.
-        until: Last date, or None for no end.
+        until: Last date.
         account_ids: Accounts to search, or None for all.
         names: The plan's account names by id.
         categories: The categories to search, or None for all, and the plan's
@@ -65,11 +68,10 @@ def check(
         ValueError: If the dates are reversed, span more than MAX_DAYS, or an
             account or a category is not in the plan.
     """
-    if until is not None:
-        if until < since:
-            raise ValueError(f"until_date {until} is before since_date {since}: swap them.")
-        if (until - since).days > MAX_DAYS:
-            raise ValueError(f"The dates span more than {MAX_DAYS} days: search a shorter period.")
+    if until < since:
+        raise ValueError(f"until_date {until} is before since_date {since}: swap them.")
+    if (until - since).days > MAX_DAYS:
+        raise ValueError(f"The dates span more than {MAX_DAYS} days: search a shorter period.")
     unknown = [a for a in account_ids or [] if a not in names]
     if unknown:
         raise ValueError(f"Account {unknown[0]} is not in this plan: use an id from list_accounts.")
@@ -145,7 +147,7 @@ def find(  # pylint: disable=too-many-arguments,too-many-locals
     categories: list[dict[str, Any]],
     *,
     since: date,
-    until: date | None = None,
+    until: date,
     amount: float | None = None,
     account_ids: list[str] | None = None,
     category_ids: list[str] | None = None,
@@ -162,7 +164,7 @@ def find(  # pylint: disable=too-many-arguments,too-many-locals
         accounts: The plan's accounts.
         categories: The plan's categories.
         since: First date, included.
-        until: Last date, included; None for no end.
+        until: Last date, included.
         amount: Exact amount in currency units, or None for any.
         account_ids: Accounts to search, or None for all.
         category_ids: Categories to search, a split line in one counting, or None for all.
@@ -184,13 +186,13 @@ def find(  # pylint: disable=too-many-arguments,too-many-locals
     check(since, until, account_ids, {a["id"]: a["name"] for a in accounts}, (category_ids, labels))
     wanted = amount_to_milliunit(amount) if amount is not None else None
     internal = internal_uncategorized(categories)
-    first, last = since.isoformat(), until.isoformat() if until else None
+    first, last = since.isoformat(), until.isoformat()
     kept = [
         tx
         for tx in transactions
         if not tx.get("deleted")
         and tx["date"] >= first
-        and (last is None or tx["date"] <= last)
+        and tx["date"] <= last
         and (wanted is None or tx["amount"] == wanted)
         and (account_ids is None or tx["account_id"] in account_ids)
         and (category_ids is None or _in_categories(tx, set(category_ids)))
@@ -205,4 +207,5 @@ def find(  # pylint: disable=too-many-arguments,too-many-locals
             Match(**line_fields(tx), **_categorisation(tx, labels)) for tx in kept[:limit]
         ],
         truncated=len(kept) > limit,
+        until_date=last,
     )

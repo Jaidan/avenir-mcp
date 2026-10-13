@@ -285,7 +285,7 @@ _MIXED_CATEGORIES = [
 
 
 def _mixed(**kw: Any) -> list[str]:
-    """Ids found in the mixed fixture, in the order found."""
+    """Ids found in the mixed fixture, sorted."""
     found = search.find(
         _MIXED, _ACCOUNTS, _MIXED_CATEGORIES, since=date(2026, 9, 1), until=date(2026, 9, 30), **kw
     )
@@ -296,8 +296,13 @@ def test_cleared_keeps_only_that_state() -> None:
     """A row without a cleared state counts as uncleared."""
     assert _mixed(cleared="cleared") == ["m-ok"]
     assert _mixed(cleared="reconciled") == ["m-new"]
-    assert "m-bare" in _mixed(cleared="uncleared")
-    assert "m-ok" not in _mixed(cleared="uncleared")
+    assert _mixed(cleared="uncleared") == [
+        "m-bare",
+        "m-dead-split",
+        "m-internal",
+        "m-split",
+        "m-transfer",
+    ]
 
 
 def test_approved_true_and_false_are_complements() -> None:

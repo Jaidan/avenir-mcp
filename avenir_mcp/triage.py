@@ -201,6 +201,31 @@ def internal_uncategorized(categories: list[dict[str, Any]]) -> set[str]:
     }
 
 
+def is_uncategorized(tx: dict[str, Any], internal: set[str]) -> bool:
+    """Tell whether a transaction has no category of its own to give.
+
+    The one rule for "uncategorized", shared by suggest_categories and the
+    find_transactions filters. True when the transaction has no category (null, or
+    YNAB's internal Uncategorized), is not split (no live subtransaction; deleted
+    ones do not count) and is not a transfer.
+
+    Off-budget (tracking) accounts and deleted transactions are not looked at here:
+    the caller decides about them.
+
+    Args:
+        tx: A YNAB transaction.
+        internal: Ids of YNAB's internal Uncategorized category.
+
+    Returns:
+        True when it is uncategorized by this rule.
+    """
+    split = any(not sub.get("deleted") for sub in tx.get("subtransactions") or [])
+    category = tx.get("category_id")
+    return (
+        (not category or category in internal) and not split and not tx.get("transfer_account_id")
+    )
+
+
 def _is_pending(tx: dict[str, Any], off_budget: set[str], uncategorized: set[str]) -> bool:
     """Tell whether a transaction waits for a category.
 
@@ -210,14 +235,12 @@ def _is_pending(tx: dict[str, Any], off_budget: set[str], uncategorized: set[str
         uncategorized: Ids of YNAB's internal Uncategorized category.
 
     Returns:
-        True when it is not deleted, not a transfer, not a split (its lines carry the
+        True when it is not deleted, not a transfer, not a split (its live lines carry the
         categories), on an account that takes categories, and without a real category.
     """
     return (
         not tx.get("deleted")
-        and (not tx.get("category_id") or tx["category_id"] in uncategorized)
-        and not tx.get("transfer_account_id")
-        and not tx.get("subtransactions")
+        and is_uncategorized(tx, uncategorized)
         and tx.get("account_id") not in off_budget
     )
 

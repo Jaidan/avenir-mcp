@@ -16,7 +16,7 @@ from typing import Any, Literal
 from avenir_mcp.classifier import normalize_payee
 from avenir_mcp.client import amount_to_milliunit
 from avenir_mcp.model import Model
-from avenir_mcp.triage import Line, internal_uncategorized, line_fields
+from avenir_mcp.triage import Line, internal_uncategorized, is_uncategorized, line_fields
 
 MAX_DAYS = 366
 DEFAULT_LIMIT = 50
@@ -139,31 +139,6 @@ def _names_payee(tx: dict[str, Any], payee: str) -> bool:
     return normalize_payee(payee) in normalize_payee(label)
 
 
-def is_uncategorized(tx: dict[str, Any], internal: set[str]) -> bool:
-    """Tell whether a transaction has no category of its own to give.
-
-    The one rule for "uncategorized" in find_transactions filters, meant to be reused
-    wherever a filter picks transactions to act on. True when the transaction has no
-    category (null, or YNAB's internal Uncategorized), is not split (no live
-    subtransaction, deleted ones do not count) and is not a transfer.
-
-    Off-budget (tracking) accounts are deliberately not excluded: a search shows their
-    transactions as they are. Deleted transactions are the caller's to drop.
-
-    Args:
-        tx: A YNAB transaction.
-        internal: Ids of YNAB's internal Uncategorized category.
-
-    Returns:
-        True when it is uncategorized by this rule.
-    """
-    split = any(not sub.get("deleted") for sub in tx.get("subtransactions") or [])
-    category = tx.get("category_id")
-    return (
-        (not category or category in internal) and not split and not tx.get("transfer_account_id")
-    )
-
-
 def find(  # pylint: disable=too-many-arguments,too-many-locals
     transactions: list[dict[str, Any]],
     accounts: list[dict[str, Any]],
@@ -194,7 +169,8 @@ def find(  # pylint: disable=too-many-arguments,too-many-locals
         payee: Merchant to search, or part of its name, or None for any.
         cleared: Only this cleared state (a missing state counts as uncleared), or None.
         approved: True for approved only, False for waiting for review only, or None.
-        uncategorized: True for is_uncategorized only, False for the others, or None.
+        uncategorized: True for what triage.is_uncategorized accepts only, False for the
+            others, or None.
         limit: Maximum number of transactions returned.
 
     Returns:

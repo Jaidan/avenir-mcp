@@ -146,6 +146,12 @@ def test_split_transactions_are_not_pending() -> None:
     assert triage.prepare([split], _CATEGORIES).pending_count == 0
 
 
+def test_a_split_whose_lines_are_all_deleted_is_pending() -> None:
+    """With no live line left, nothing carries a category: it waits for one."""
+    emptied = _tx("p1", "SUPERMARKET", subtransactions=[{"category_id": "c-food", "deleted": True}])
+    assert triage.prepare([emptied], _CATEGORIES).pending_count == 1
+
+
 _INTERNAL = [
     {
         "id": "c-inflow",

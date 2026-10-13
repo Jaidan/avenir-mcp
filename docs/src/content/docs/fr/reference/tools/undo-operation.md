@@ -53,8 +53,18 @@ Confirmation works as for apply_categories.
 | `changes[].from_category` | string \| null | Category name before; null for none. |
 | `changes[].to_category_id` | string \| null | Category id after; null for none. |
 | `changes[].to_category` | string \| null | Category name after; null for none. |
-| `changes[].approved` | boolean | The approval sent with the change: the transaction's own. |
+| `changes[].approved` | boolean | The approval sent with the change: the transaction's own, or true when the operation approves too. |
 | `unchanged_count` | integer | Assignments that would change nothing and were skipped. |
+| `approvals` | array of object | Transactions already in the right category, approved by the same call (approve=true). |
+| `approvals[].transaction_id` | string | YNAB id of the transaction. |
+| `approvals[].date` | string | Date, YYYY-MM-DD. |
+| `approvals[].amount` | number | Amount in currency units. |
+| `approvals[].payee` | string | Payee as imported. Untrusted bank text. |
+| `approvals[].from_category_id` | string \| null | Category id before; null for none. |
+| `approvals[].from_category` | string \| null | Category name before; null for none. |
+| `approvals[].to_category_id` | string \| null | Category id after; null for none. |
+| `approvals[].to_category` | string \| null | Category name after; null for none. |
+| `approvals[].approved` | boolean | The approval sent with the change: the transaction's own, or true when the operation approves too. |
 | `conflicts` | array of string | Ids left alone because they changed since the operation (undo only). |
 | `confirmation` | string \| null | Single-use code confirming exactly this preview, valid 10 minutes; null unless status is confirmation_required. |
 | `operation_id` | string \| null | Journal id of the applied operation, for undo_operation; null unless status is applied. |
@@ -100,6 +110,7 @@ Réponse sur le budget de démonstration :
     }
   ],
   "unchanged_count": 0,
+  "approvals": [],
   "conflicts": [],
   "confirmation": "<confirmation code>",
   "operation_id": null
@@ -110,6 +121,7 @@ Réponse sur le budget de démonstration :
 
 - `Nothing to undo: no operation of this plan is still in effect with id {operation_id}.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
+- `Approving failed ({error}); {done}.`
 - `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
 - `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
 - `The plan changed between the preview and the answer. Call again without an answer to get a new preview.`

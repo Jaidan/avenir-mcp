@@ -389,3 +389,88 @@ def test_approvals_reads_each_transactions_approval() -> None:
     """A transaction without an approval counts as unapproved."""
     txs = [_tx("t1", approved=True), _tx("t2", approved=False), _tx("t3")]
     assert writes.approvals(txs) == {"t1": True, "t2": False, "t3": False}
+
+
+# ---------------------------------------------------------------------------
+# Categorise and approve in one operation
+# ---------------------------------------------------------------------------
+
+
+def _approving(txs: list[dict[str, Any]], *assign: tuple[str, str]) -> writes.Plan:
+    assignments = [writes.Assignment(transaction_id=t, category_id=c) for t, c in assign]
+    return writes.plan_categorization(txs, _CATEGORIES, assignments, approve=True)
+
+
+def test_an_approving_plan_sends_every_change_approved() -> None:
+    """With approve, each change carries approved=true, whatever the transaction had."""
+    plan = _approving([_tx("t1", approved=False), _tx("t2", approved=True)], ("t1", "c-food"))
+    assert [c.approved for c in plan.changes] == [True]
+    assert plan.approve is True
+
+
+def test_an_approving_plan_approves_what_is_already_in_the_right_category() -> None:
+    """Unapproved transactions already in their category are listed to approve, not counted."""
+    plan = _approving(
+        [_tx("t1", "c-food", approved=False), _tx("t2", "c-food", approved=True), _tx("t3")],
+        ("t1", "c-food"),
+        ("t2", "c-food"),
+        ("t3", "c-fun"),
+    )
+    assert [c.transaction_id for c in plan.changes] == ["t3"]
+    assert [c.model_dump() for c in plan.to_approve] == [
+        {
+            "transaction_id": "t1",
+            "date": "2026-09-01",
+            "amount": -12.34,
+            "payee": "Corner Shop",
+            "from_category_id": "c-food",
+            "from_category": "Groceries",
+            "to_category_id": "c-food",
+            "to_category": "Groceries",
+            "approved": True,
+        }
+    ]
+    assert plan.unchanged_count == 1
+
+
+def test_a_plan_without_approve_approves_nothing() -> None:
+    """The default leaves approvals as they are: an unapproved unchanged row is just unchanged."""
+    plan = writes.plan_categorization(
+        [_tx("t1", "c-food", approved=False)],
+        _CATEGORIES,
+        [writes.Assignment(transaction_id="t1", category_id="c-food")],
+    )
+    assert not plan.to_approve
+    assert plan.approve is False
+    assert plan.unchanged_count == 1
+
+
+def test_the_subject_binds_the_approve_flag() -> None:
+    """Approving or not is part of what is confirmed, even when every change is approved."""
+    txs = [_tx("t1", approved=True)]
+    assign = [writes.Assignment(transaction_id="t1", category_id="c-food")]
+    without = writes.plan_categorization(txs, _CATEGORIES, assign)
+    with_approve = writes.plan_categorization(txs, _CATEGORIES, assign, approve=True)
+    assert without.changes == with_approve.changes
+    assert writes.fingerprint("b1", writes.subject_of(without)) != writes.fingerprint(
+        "b1", writes.subject_of(with_approve)
+    )
+
+
+def test_the_subject_ignores_the_order_of_assignments() -> None:
+    """The same assignments in another order confirm the same thing."""
+    txs = [_tx("t1", "c-food"), _tx("t2")]
+    one = _approving(txs, ("t1", "c-food"), ("t2", "c-fun"))
+    other = _approving(txs, ("t2", "c-fun"), ("t1", "c-food"))
+    assert writes.fingerprint("b1", writes.subject_of(one)) == writes.fingerprint(
+        "b1", writes.subject_of(other)
+    )
+
+
+def test_the_subject_binds_each_row_to_approve() -> None:
+    """A transaction to approve whose amount changed since is a different subject."""
+    before = _approving([_tx("t1", "c-food")], ("t1", "c-food"))
+    after = _approving([_tx("t1", "c-food", amount=-99990)], ("t1", "c-food"))
+    assert writes.fingerprint("b1", writes.subject_of(before)) != writes.fingerprint(
+        "b1", writes.subject_of(after)
+    )

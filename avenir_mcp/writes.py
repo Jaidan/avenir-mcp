@@ -59,7 +59,9 @@ class Change(Model):
     to_category: str | None
     """Category name after; null for none."""
     approved: bool
-    """The approval sent with the change: the transaction's own."""
+    """The approval sent with the change: the transaction's own, or true when the operation
+    approves too.
+    """
 
 
 class Plan(Model):
@@ -71,6 +73,27 @@ class Plan(Model):
     """Assignments that change nothing."""
     conflicts: list[str] = []
     """Ids left alone because they changed since."""
+    to_approve: list[Change] = []
+    """Transactions already in the right category, approved by the same operation."""
+    approve: bool = False
+    """Whether the operation approves the transactions it is given."""
+
+
+def subject_of(plan: Plan) -> list[Any]:
+    """Say what confirming a recategorisation plan binds, for a code or an answer.
+
+    A flat list, so that :func:`fingerprint` ignores the order of the assignments.
+    Rows only approved are bound in full, so a code goes stale when one of them
+    changes; the approve flag is an item of its own, since every change may already
+    be approved.
+
+    Args:
+        plan: The changes, the rows to approve and the approve flag.
+
+    Returns:
+        The items confirmed, as models and JSON data.
+    """
+    return [*plan.changes, *({"approve": c} for c in plan.to_approve), {"approve": plan.approve}]
 
 
 def approvals(transactions: Iterable[dict[str, Any]]) -> dict[str, bool]:
@@ -113,11 +136,12 @@ def _check_category(
         raise ValueError(f"Category {category_id} {CARD_CATEGORY}")
 
 
-def plan_categorization(
+def plan_categorization(  # pylint: disable=too-many-locals
     transactions: list[dict[str, Any]],
     categories: list[dict[str, Any]],
     assignments: list[Assignment],
     off_budget: set[str] | frozenset[str] = frozenset(),
+    approve: bool = False,
 ) -> Plan:
     """Work out what assigning these categories would change.
 
@@ -126,9 +150,11 @@ def plan_categorization(
         categories: The plan's categories.
         assignments: The categories to give, one per transaction.
         off_budget: Ids of the tracking accounts.
+        approve: Approve the transactions too: each change is sent approved, and an
+            unapproved transaction already in its category is listed to approve.
 
     Returns:
-        The changes, and how many assignments change nothing.
+        The changes, the transactions to approve, and how many assignments change nothing.
 
     Raises:
         ValueError: With a message saying what to fix, if an assignment names an
@@ -141,6 +167,7 @@ def plan_categorization(
     refused = (internal_uncategorized(categories), card_payments(categories))
     seen: set[str] = set()
     changes: list[Change] = []
+    to_approve: list[Change] = []
     unchanged = 0
     for assignment in assignments:
         tx_id, category_id = assignment.transaction_id, assignment.category_id
@@ -167,23 +194,23 @@ def plan_categorization(
                 f"Transaction {tx_id} is a transfer between accounts: YNAB gives it no category."
             )
         current = tx.get("category_id")
-        if current == category_id:
+        approved = bool(tx.get("approved"))
+        if current == category_id and (approved or not approve):
             unchanged += 1
             continue
-        changes.append(
-            Change(
-                transaction_id=tx_id,
-                date=tx["date"],
-                amount=milliunit_to_amount(tx["amount"]),
-                payee=untrusted(tx.get("payee_name")),
-                from_category_id=current,
-                from_category=untrusted(names.get(current)) or None,
-                to_category_id=category_id,
-                to_category=untrusted(names[category_id]),
-                approved=bool(tx.get("approved")),
-            )
+        change = Change(
+            transaction_id=tx_id,
+            date=tx["date"],
+            amount=milliunit_to_amount(tx["amount"]),
+            payee=untrusted(tx.get("payee_name")),
+            from_category_id=current,
+            from_category=untrusted(names.get(current)) or None,
+            to_category_id=category_id,
+            to_category=untrusted(names[category_id]),
+            approved=approve or approved,
         )
-    return Plan(changes=changes, unchanged_count=unchanged)
+        (to_approve if current == category_id else changes).append(change)
+    return Plan(changes=changes, unchanged_count=unchanged, to_approve=to_approve, approve=approve)
 
 
 def plan_undo(

@@ -159,3 +159,24 @@ def test_category_names_cannot_forge_lines_in_the_question(ynab: AsyncMock) -> N
     assert one_line(asked[0])
     assert data["lines"][0]["category"] == FLAT
     ynab.assert_called_once()
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_split_can_approve_in_the_same_call(ynab: AsyncMock, approved: bool) -> None:
+    """approve=true sends the split approved, whatever the transaction had; the user is told."""
+    asked: list[str] = []
+    tx = _TX | {"approved": approved}
+    with patch("avenir_mcp.client.get_transactions", AsyncMock(return_value=[tx])):
+        call("split_transaction", _args(approve=True), asking(asked))
+    assert ynab.call_args.kwargs == {"approved": True}
+    assert asked[0].startswith(
+        "Split 2026-09-12 Organic Market -86.40 into 2 lines and approve it?"
+    )
+
+
+def test_a_code_for_splitting_cannot_approve(ynab: AsyncMock) -> None:
+    """The code binds the approve flag: a split previewed without approving cannot approve."""
+    code = call("split_transaction", _args()).structured_content["confirmation"]
+    result = call("split_transaction", _args(approve=True, confirmation=code))
+    assert result.is_error
+    ynab.assert_not_called()

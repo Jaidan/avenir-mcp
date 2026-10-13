@@ -32,6 +32,7 @@ GUIDE_TITLES: dict[str, dict[str, str]] = json.loads(
 UNDOABLE = {
     "apply_categories",
     "set_category_budget",
+    "set_category_budgets",
     "move_money",
     "reconcile_account",
     "create_transactions",
@@ -64,6 +65,7 @@ GUIDES = {
     "get_runway": "guides/plan-ahead",
     "get_debt_payoff_plan": "guides/plan-ahead",
     "set_category_budget": "guides/categories",
+    "set_category_budgets": "guides/categories",
     "move_money": "guides/monthly-review",
     "create_transactions": "guides/missing-transactions",
     "create_category": "guides/categories",

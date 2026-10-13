@@ -45,6 +45,7 @@ avenir-mcp déclare ces outils. Les outils de lecture sont toujours disponibles 
 | [`reconcile_account`](/avenir-mcp/fr/reference/tools/reconcile-account/) | Compare an account with the balance your bank shows, then reconcile it. |
 | [`rename_payee`](/avenir-mcp/fr/reference/tools/rename-payee/) | Rename a payee, e.g. a bank label into the merchant's name, after the user confirms. |
 | [`set_category_budget`](/avenir-mcp/fr/reference/tools/set-category-budget/) | Set the amount budgeted ("Assigned") in a category for a month, after the user confirms. |
+| [`set_category_budgets`](/avenir-mcp/fr/reference/tools/set-category-budgets/) | Set the amounts budgeted ("Assigned") in several categories for a month, confirmed once. |
 | [`set_category_target`](/avenir-mcp/fr/reference/tools/set-category-target/) | Set, change or remove a category's target, after the user confirms. |
 | [`split_transaction`](/avenir-mcp/fr/reference/tools/split-transaction/) | Split one transaction across categories, e.g. from a receipt, after the user confirms. |
 | [`undo_operation`](/avenir-mcp/fr/reference/tools/undo-operation/) | Undo an operation made through this server: the latest one, or the one named. |

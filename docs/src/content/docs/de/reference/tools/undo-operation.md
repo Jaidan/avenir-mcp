@@ -13,10 +13,11 @@ Undo an operation made through this server: the latest one, or the one named.
 
 Recategorised transactions go back to their previous category; a
 reconciliation is reverted (statuses and adjustment); a budgeted amount goes
-back to its previous value, both of a move_money; created transactions are deleted; flags
-go back to their previous colour; a target goes back to what it was; a renamed
-payee gets its old name back. Anything
-changed again since the operation is left alone and listed in `conflicts`.
+back to its previous value, both of a move_money, each of a
+set_category_budgets; created transactions are deleted; flags go back to their
+previous colour; a target goes back to what it was; a renamed payee gets its old
+name back. Anything changed again since the operation is left alone and listed in
+`conflicts`.
 Confirmation works as for apply_categories.
 
 ## Verhalten

@@ -240,3 +240,9 @@ def test_a_long_list_shows_twenty_rows_and_how_many_more() -> None:
 def test_a_short_list_shows_every_row() -> None:
     """Twenty rows or fewer: no "more" line."""
     assert confirm.rows_question("Approve", ["a", "b"]) == "Approve 2 transaction(s)?\n- a\n- b"
+
+
+def test_a_list_names_what_it_counts() -> None:
+    """Rows other than transactions are counted under their own name."""
+    question = confirm.rows_question("Budget", ["a"], "categories for 2026-10-01")
+    assert question == "Budget 1 categories for 2026-10-01?\n- a"

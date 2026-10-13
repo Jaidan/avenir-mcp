@@ -12,7 +12,8 @@ Gegenereerd uit de code door `python -m docsgen`; een test faalt zodra de pagina
 Set the amount budgeted ("Assigned") in a category for a month, after the user confirms.
 
 The amount is absolute, in currency units, not a change. The result gives the
-amount before and after; undo_operation restores the previous one.
+amount before and after; undo_operation restores the previous one. For more than
+one category, use set_category_budgets: one confirmation for all of them.
 Confirmation works as for apply_categories.
 
 ## Gedrag

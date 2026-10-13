@@ -282,7 +282,15 @@ def _tool_counts() -> tuple[int, int]:
     return read, every - read
 
 
-_WORDS = {9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen", 14: "fourteen"}
+_WORDS = {
+    9: "nine",
+    10: "ten",
+    11: "eleven",
+    12: "twelve",
+    13: "thirteen",
+    14: "fourteen",
+    15: "fifteen",
+}
 
 
 def test_the_tool_counts_written_in_the_pages_are_the_servers() -> None:

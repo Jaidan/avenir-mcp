@@ -14,7 +14,14 @@ from mcp.types import InputRequiredResult
 
 from avenir_mcp import client, flags, journal, targets, writes
 from avenir_mcp.app import WRITE_TAG, mcp
-from avenir_mcp.confirm import WriteResult, ask, not_applied, result_of, write_plan
+from avenir_mcp.confirm import (
+    WriteResult,
+    ask,
+    not_applied,
+    result_of,
+    rows_question,
+    write_plan,
+)
 from avenir_mcp.text import untrusted
 
 logger = logging.getLogger(__name__)
@@ -43,10 +50,11 @@ async def undo_operation(
 
     Recategorised transactions go back to their previous category; a
     reconciliation is reverted (statuses and adjustment); a budgeted amount goes
-    back to its previous value, both of a move_money; created transactions are deleted; flags
-    go back to their previous colour; a target goes back to what it was; a renamed
-    payee gets its old name back. Anything
-    changed again since the operation is left alone and listed in `conflicts`.
+    back to its previous value, both of a move_money, each of a
+    set_category_budgets; created transactions are deleted; flags go back to their
+    previous colour; a target goes back to what it was; a renamed payee gets its old
+    name back. Anything changed again since the operation is left alone and listed in
+    `conflicts`.
     Confirmation works as for apply_categories.
 
     Args:
@@ -80,6 +88,8 @@ async def undo_operation(
         return await _undo_budget(ctx, plan_id, book, entry, confirmation)
     if entry.kind == "move":
         return await _undo_move(ctx, plan_id, book, entry, confirmation)
+    if entry.kind == "budgets":
+        return await _undo_budgets(ctx, plan_id, book, entry, confirmation)
     if entry.kind == "create":
         return await _undo_create(ctx, plan_id, book, entry, confirmation)
     if entry.kind == "flag":
@@ -259,6 +269,56 @@ async def _undo_move(
         await client.set_category_budgeted(plan_id, month, change["category_id"], previous)
     book.mark_undone(entry.operation_id)
     return result_of("applied", "Both amounts restored.", writes.Plan())
+
+
+async def _undo_budgets(
+    ctx: Context,
+    plan_id: str,
+    book: journal.Journal,
+    entry: journal.Entry,
+    confirmation: str | None,
+) -> WriteResult | InputRequiredResult:
+    """Put back each category of a set_category_budgets still at the amount it set.
+
+    Args:
+        ctx: The MCP context, used to ask the user.
+        plan_id: YNAB plan id or 'last-used'.
+        book: The journal, to mark the operation undone.
+        entry: The operation to undo.
+        confirmation: A code from a previous preview, or None.
+
+    Returns:
+        What was done, the categories changed since as conflicts, or what to return
+        instead when the user did not agree.
+    """
+    month, changes = entry.details["month"], entry.details["changes"]
+    current = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
+    back = [c for c in changes if current.get(c["category_id"], {}).get("budgeted") == c["to"]]
+    moved = [c["category_id"] for c in changes if c not in back]
+    if not back:
+        return result_of(
+            "nothing_to_do",
+            "Every amount changed since: left alone.",
+            writes.Plan(conflicts=moved),
+        )
+    question = rows_question(
+        "Undo: budget",
+        [
+            f"{untrusted(current[c['category_id']]['name'])}: "
+            f"{client.milliunit_to_amount(c['to']):.2f} → "
+            f"{client.milliunit_to_amount(c['from']):.2f}"
+            for c in back
+        ],
+        f"categories for {month}",
+    )
+    refused = await _confirm_undo(ctx, plan_id, entry, question, confirmation)
+    if refused is not None:
+        return refused
+    for change in back:
+        previous = client.milliunit_to_amount(change["from"])
+        await client.set_category_budgeted(plan_id, month, change["category_id"], previous)
+    book.mark_undone(entry.operation_id)
+    return result_of("applied", "Budgeted amounts restored.", writes.Plan(conflicts=moved))
 
 
 async def _undo_create(

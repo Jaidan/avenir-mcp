@@ -131,12 +131,13 @@ def describe(plan: writes.Plan, action: str) -> str:
     )
 
 
-def rows_question(action: str, rows: list[str]) -> str:
-    """Ask about a list of transactions: the first 20 rows, and how many more.
+def rows_question(action: str, rows: list[str], what: str = "transaction(s)") -> str:
+    """Ask about a list of transactions, or other rows: the first 20, and how many more.
 
     Args:
         action: What is done to them, e.g. "Approve".
-        rows: One line per transaction, already safe to show.
+        rows: One line per row, already safe to show.
+        what: What the rows are, after their count.
 
     Returns:
         The question, a row per line.
@@ -144,7 +145,7 @@ def rows_question(action: str, rows: list[str]) -> str:
     lines = [f"- {row}" for row in rows[:20]]
     if len(rows) > 20:
         lines.append(f"- … and {len(rows) - 20} more")
-    return f"{action} {len(rows)} transaction(s)?\n" + "\n".join(lines)
+    return f"{action} {len(rows)} {what}?\n" + "\n".join(lines)
 
 
 def _answer(action: str, content: dict[str, Any] | None) -> WriteStatus | None:

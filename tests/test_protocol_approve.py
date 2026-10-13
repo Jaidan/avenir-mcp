@@ -20,6 +20,7 @@ _ACCOUNTS = [
 ]
 _CATEGORIES = [
     {"id": "c-food", "name": "Groceries", "category_group_name": "Everyday"},
+    {"id": "c-fun", "name": "Fun", "category_group_name": "Everyday"},
     {
         "id": "c-internal",
         "name": "Uncategorized",
@@ -48,7 +49,10 @@ def _tx(tx_id: str, day: str, **extra: Any) -> dict[str, Any]:
 
 def _month() -> list[dict[str, Any]]:
     """Four rows to approve, and one row for each reason to leave a row alone."""
-    live = [{"id": "s1", "category_id": "c-food", "deleted": False}]
+    live = [
+        {"id": "s1", "category_id": "c-food", "amount": -10_000, "deleted": False},
+        {"id": "s2", "category_id": "c-fun", "amount": -2_340, "deleted": False},
+    ]
     return [
         _tx("t-food", "2026-09-04"),
         _tx("t-split", "2026-09-06", category_id=None, subtransactions=live),
@@ -132,6 +136,7 @@ def test_a_period_without_elicitation_returns_a_code_and_approves_nothing(ynab: 
     assert found["confirmation"]
     assert found["approved"] == 0
     assert [t["transaction_id"] for t in found["transactions"]] == _EXPECTED
+    assert [t["split"] for t in found["transactions"]] == [False, True, False, False]
     assert "Approve 4 transaction(s)?" in found["message"]
     assert "- 2026-09-06 Corner Shop -12.34: split" in found["message"]
     assert "- 2026-09-08 Corner Shop -12.34: transfer" in found["message"]
@@ -143,6 +148,15 @@ def test_an_accepted_period_approves_exactly_the_reviewed_rows(ynab: FakeYnab) -
     """Uncleared, uncategorized, approved, excluded and later rows are left alone."""
     result = call("approve_transactions", _september(), accept).structured_content
     assert (result["status"], result["approved"]) == ("applied", 4)
+    assert ynab.approved == [_EXPECTED]
+
+
+def test_an_applied_period_answers_briefly(ynab: FakeYnab) -> None:
+    """Once approved, the count and a message: the rows were in the preview."""
+    result = call("approve_transactions", _september(), accept).structured_content
+    assert result["transactions"] == []
+    assert result["message"] == "Approved 4 transaction(s). Not undoable."
+    assert result["confirmation"] is None
     assert ynab.approved == [_EXPECTED]
 
 
@@ -164,10 +178,21 @@ def test_a_code_from_one_window_cannot_approve_another(ynab: FakeYnab) -> None:
     assert ynab.approved == []
 
 
-def test_a_code_cannot_approve_a_row_changed_since(ynab: FakeYnab) -> None:
-    """A row whose amount changed after the preview is not what the user agreed to."""
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda txs: txs[0].update(amount=-99_990),
+        lambda txs: txs[0].update(payee_name="Other Shop"),
+        lambda txs: txs[0].update(category_id="c-fun"),
+        lambda txs: txs[1]["subtransactions"][1].update(category_id="c-food"),
+        lambda txs: txs[1]["subtransactions"][0].update(amount=-9_000),
+    ],
+    ids=["amount", "payee", "category", "a split line's category", "a split line's amount"],
+)
+def test_a_code_cannot_approve_a_row_changed_since(ynab: FakeYnab, change: Any) -> None:
+    """A row that changed after the preview is not what the user agreed to."""
     code = call("approve_transactions", _september()).structured_content["confirmation"]
-    ynab.transactions[0]["amount"] = -99_990
+    change(ynab.transactions)
     result = call("approve_transactions", _september(confirmation=code))
     assert result.is_error
     assert ynab.approved == []

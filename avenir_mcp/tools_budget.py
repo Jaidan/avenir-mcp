@@ -17,7 +17,7 @@ from pydantic import Field
 from avenir_mcp import analytics, app, client, schedule, search
 from avenir_mcp.amounts import Amount
 from avenir_mcp.app import WRITE_TAG, check_month, mcp, set_read_only_wording
-from avenir_mcp.confirm import WriteStatus, gate, merged
+from avenir_mcp.confirm import WriteStatus, gate, merged, rows_question
 from avenir_mcp.model import Model
 from avenir_mcp.text import untrusted
 
@@ -100,7 +100,8 @@ class Approval(Model):
     """By dates: single-use code confirming exactly this preview, valid 10 minutes; null unless
     status is confirmation_required."""
     transactions: list[search.Match] = []
-    """By dates: every transaction approved, or that the preview would approve, oldest first."""
+    """By dates, in a preview: every transaction it would approve, oldest first; empty once
+    applied, and by ids."""
 
 
 _LIST_PLANS = """List all YNAB plans accessible with the current API key.
@@ -507,7 +508,7 @@ async def list_scheduled_transactions(
         "open_world_hint": True,
     },
 )
-async def approve_transactions(  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+async def approve_transactions(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     plan_id: str,
     ctx: Context,
     tx_ids: list[str] | None = None,
@@ -542,16 +543,15 @@ async def approve_transactions(  # pylint: disable=too-many-arguments,too-many-p
         confirmation: Code from a previous "confirmation_required" result.
 
     Returns:
-        How many transactions YNAB updated; by dates also the status, the rows and the
-        confirmation code, or an input request the client answers by asking the user
-        (protocol 2026-07-28).
+        How many transactions YNAB updated; by dates also the status, a message, and in a
+        preview the rows and the confirmation code; or an input request the client
+        answers by asking the user (protocol 2026-07-28).
 
     Raises:
         ToolError: If both modes or neither are given, the dates are reversed or more than
             a year apart, or the confirmation code is refused.
     """
-    by_dates = since_date is not None or until_date is not None or exclude_ids is not None
-    if tx_ids is not None and not by_dates:
+    if tx_ids is not None and (since_date, until_date, exclude_ids) == (None, None, None):
         logger.info("Tool called: approve_transactions(plan_id=%r, n=%d)", plan_id, len(tx_ids))
         done = await client.approve_transactions(plan_id, tx_ids)
         return Approval(approved=done["approved"])
@@ -563,8 +563,7 @@ async def approve_transactions(  # pylint: disable=too-many-arguments,too-many-p
     logger.info("Tool called: approve_transactions(since=%s)", since_date)
     until = until_date or min(app.today(), since_date + timedelta(days=search.MAX_DAYS))
     excluded = sorted(exclude_ids or [])
-    rows, labels = await _period(plan_id, since_date, until, excluded)
-    matches = [search.as_match(tx, labels) for tx in rows]
+    rows, matches = await _period(plan_id, since_date, until, excluded)
     result = Approval(
         approved=0,
         status="nothing_to_do",
@@ -577,10 +576,7 @@ async def approve_transactions(  # pylint: disable=too-many-arguments,too-many-p
         {"since": since_date.isoformat()},
         {"until": until.isoformat()},
         {"exclude": excluded},
-        *(
-            {"id": tx["id"], "date": tx["date"], "amount": tx["amount"], "category": _category(tx)}
-            for tx in rows
-        ),
+        *(_subject_row(tx) for tx in rows),
     ]
     stop = await gate(ctx, plan_id, subject, _approval_question(rows, matches), confirmation)
     if stop is not None:
@@ -591,13 +587,14 @@ async def approve_transactions(  # pylint: disable=too-many-arguments,too-many-p
             "approved": done["approved"],
             "status": "applied",
             "message": f"Approved {done['approved']} transaction(s). Not undoable.",
+            "transactions": [],
         }
     )
 
 
 async def _period(
     plan_id: str, since: date, until: date, excluded: list[str]
-) -> tuple[list[dict[str, Any]], dict[str, str]]:
+) -> tuple[list[dict[str, Any]], list[search.Match]]:
     """Read what a period's review approves, the dates checked before reading transactions.
 
     Args:
@@ -607,8 +604,8 @@ async def _period(
         excluded: Transactions to leave unapproved.
 
     Returns:
-        The transactions to approve, as YNAB sent them, oldest first, and the plan's
-        category names by id.
+        The transactions to approve, oldest first: as YNAB sent them, and as an agent
+        reads them.
 
     Raises:
         ToolError: If the dates are reversed or more than a year apart.
@@ -623,22 +620,33 @@ async def _period(
     rows = search.approvable(
         transactions, accounts, categories, since=since, until=until, exclude_ids=excluded
     )
-    return rows, {c["id"]: c["name"] for c in categories}
+    labels = {c["id"]: c["name"] for c in categories}
+    return rows, [search.as_match(tx, labels) for tx in rows]
 
 
-def _category(tx: dict[str, Any]) -> str | None:
-    """Say what a transaction's approval rests on, for the confirmation's subject.
+def _subject_row(tx: dict[str, Any]) -> dict[str, Any]:
+    """Say what approving a transaction rests on, for the confirmation's subject.
 
     Args:
         tx: A YNAB transaction.
 
     Returns:
-        Its category id, or the ids of its live split lines, or None.
+        Its id, date, amount in milliunits, payee, category id, and its live split
+        lines as sorted [category_id, amount in milliunits] pairs.
     """
-    lines = [sub for sub in tx.get("subtransactions") or [] if not sub.get("deleted")]
-    if lines:
-        return ",".join(sorted(str(sub.get("category_id")) for sub in lines))
-    return tx.get("category_id")
+    lines = [
+        [sub.get("category_id") or "", sub.get("amount")]
+        for sub in tx.get("subtransactions") or []
+        if not sub.get("deleted")
+    ]
+    return {
+        "id": tx["id"],
+        "date": tx["date"],
+        "amount": tx["amount"],
+        "payee": untrusted(tx.get("payee_name")),
+        "category": tx.get("category_id"),
+        "lines": sorted(lines),
+    }
 
 
 def _approval_question(rows: list[dict[str, Any]], matches: list[search.Match]) -> str:
@@ -652,17 +660,15 @@ def _approval_question(rows: list[dict[str, Any]], matches: list[search.Match]) 
         The question; bank text in it is made safe to show.
     """
     lines = []
-    for tx, match in zip(rows[:20], matches[:20], strict=True):
+    for tx, match in zip(rows, matches, strict=True):
         if match.split:
             category = "split"
         elif tx.get("transfer_account_id"):
             category = "transfer"
         else:
             category = untrusted(match.category) or "no category"
-        lines.append(f"- {match.date} {match.payee} {match.amount:.2f}: {category}")
-    if len(rows) > 20:
-        lines.append(f"- … and {len(rows) - 20} more")
-    return f"Approve {len(rows)} transaction(s)?\n" + "\n".join(lines)
+        lines.append(f"{match.date} {match.payee} {match.amount:.2f}: {category}")
+    return rows_question("Approve", lines)
 
 
 @mcp.tool(

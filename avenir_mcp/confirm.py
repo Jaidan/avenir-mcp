@@ -122,14 +122,29 @@ def describe(plan: writes.Plan, action: str) -> str:
         *(f"{untrusted(c.to_category) or 'no category'} (approve)" for c in plan.to_approve),
     ]
     every = [*plan.changes, *plan.to_approve]
-    lines = [
-        f"- {c.date} {untrusted(c.payee)} {c.amount:.2f}: {row}"
-        for c, row in zip(every[:20], rows[:20], strict=True)
-    ]
-    more = len(every) - len(lines)
-    if more > 0:
-        lines.append(f"- … and {more} more")
-    return f"{action} {len(every)} transaction(s)?\n" + "\n".join(lines)
+    return rows_question(
+        action,
+        [
+            f"{c.date} {untrusted(c.payee)} {c.amount:.2f}: {row}"
+            for c, row in zip(every, rows, strict=True)
+        ],
+    )
+
+
+def rows_question(action: str, rows: list[str]) -> str:
+    """Ask about a list of transactions: the first 20 rows, and how many more.
+
+    Args:
+        action: What is done to them, e.g. "Approve".
+        rows: One line per transaction, already safe to show.
+
+    Returns:
+        The question, a row per line.
+    """
+    lines = [f"- {row}" for row in rows[:20]]
+    if len(rows) > 20:
+        lines.append(f"- … and {len(rows) - 20} more")
+    return f"{action} {len(rows)} transaction(s)?\n" + "\n".join(lines)
 
 
 def _answer(action: str, content: dict[str, Any] | None) -> WriteStatus | None:

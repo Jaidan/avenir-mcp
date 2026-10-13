@@ -224,3 +224,19 @@ def test_a_modern_answer_without_approve_cannot_approve(ynab: list[Any]) -> None
     with pytest.raises(ToolError, match="plan changed"):
         _write(_answered(request), _approving(txs, slice(0, 1)))
     assert ynab == []
+
+
+def test_a_long_list_shows_twenty_rows_and_how_many_more() -> None:
+    """The question names the action and the count, then at most 20 rows."""
+    rows = [f"2026-09-{i:02} Shop -1.00: Groceries" for i in range(1, 23)]
+    question = confirm.rows_question("Approve", rows)
+    lines = question.split("\n")
+    assert lines[0] == "Approve 22 transaction(s)?"
+    assert lines[1] == "- 2026-09-01 Shop -1.00: Groceries"
+    assert len(lines) == 22
+    assert lines[-1] == "- … and 2 more"
+
+
+def test_a_short_list_shows_every_row() -> None:
+    """Twenty rows or fewer: no "more" line."""
+    assert confirm.rows_question("Approve", ["a", "b"]) == "Approve 2 transaction(s)?\n- a\n- b"

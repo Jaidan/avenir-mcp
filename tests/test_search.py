@@ -444,3 +444,10 @@ def test_approvable_keeps_the_first_and_last_days() -> None:
     """Both ends of the window are included."""
     txs = [_tx("first", "2026-09-01", -1, **_READY), _tx("last", "2026-09-30", -1, **_READY)]
     assert _approvable(txs) == ["first", "last"]
+
+
+def test_approvable_keeps_an_off_budget_row_without_a_category() -> None:
+    """A tracking account's rows take no category: the same row on budget waits for one."""
+    tracking = _tx("tracking", "2026-09-10", -1_000, cleared="cleared", account_id="a-track")
+    on_budget = _tx("on-budget", "2026-09-10", -1_000, cleared="cleared")
+    assert _approvable([tracking, on_budget]) == ["tracking"]

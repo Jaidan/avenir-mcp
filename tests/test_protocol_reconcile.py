@@ -43,7 +43,7 @@ class _Bank:
         self.created: list[dict[str, Any]] = []
         self.deleted: list[str] = []
         self.sent_approved: list[dict[str, bool]] = []
-        self.loads = 0
+        self.fresh: list[bool] = []
 
     @staticmethod
     def _tx(tx_id: str, amount: int, cleared: str) -> dict[str, Any]:
@@ -58,13 +58,9 @@ class _Bank:
             "deleted": False,
         }
 
-    async def get_transactions(
-        self,
-        _budget_id: str,
-        fresh: bool = False,  # pylint: disable=unused-argument
-    ) -> list[dict[str, Any]]:
-        """Return copies, as YNAB would, counting the loads."""
-        self.loads += 1
+    async def get_transactions(self, _budget_id: str, fresh: bool = False) -> list[dict[str, Any]]:
+        """Return copies, as YNAB would, recording whether each load was a fresh one."""
+        self.fresh.append(fresh)
         return [dict(tx) for tx in self.transactions]
 
     async def create_transactions(
@@ -275,9 +271,9 @@ def test_totals_that_still_disagree_stop_before_anything_is_asked(
         99.0,
     )
     assert "70.00" in data["message"] and "99.00" in data["message"]
-    assert "Nothing was changed" in data["message"]
+    assert "Nothing was changed" in data["message"] and "in a minute" in data["message"]
     assert data["confirmation"] is None and data["adjustment"] is None
-    assert bank.loads == 2
+    assert bank.fresh == [False, True]
     assert not asked
     assert not bank.created and not bank.sent_approved
     assert bank.status("t2") == "cleared"
@@ -342,3 +338,15 @@ def test_an_import_ynab_absorbed_is_dropped_by_a_full_reload(
     assert data["analysis"]["ynab_cleared_balance"] == 58.683
     assert data["analysis"]["possible_duplicates"] == []
     assert [params.get("last_knowledge_of_server") for params in sent] == [None, 1, None]
+
+
+def test_the_account_is_read_again_with_the_fresh_transactions(bank: _Bank) -> None:
+    """YNAB's total read before a change is read again beside the reload: the two agree."""
+    before = [{**_ACCOUNTS[0], "cleared_balance": 60.0}]
+    accounts = AsyncMock(side_effect=[before, _ACCOUNTS])
+    with patch("avenir_mcp.client.get_accounts", accounts):
+        data = call("reconcile_account", _args(65.0)).structured_content
+    assert data["status"] == "difference_found"
+    assert data["analysis"]["ynab_cleared_balance"] == 70.0
+    assert bank.fresh == [False, True]
+    assert accounts.await_count == 2

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 import logging
 from datetime import date, timedelta
@@ -61,14 +62,36 @@ class ReconcileResult(Model):
     """Journal id of the applied operation, for undo_operation; null unless status is applied."""
 
 
+def _against_ynab(
+    account: dict[str, Any], transactions: list[dict[str, Any]], bank_balance: float
+) -> tuple[reconcile.Analysis, bool]:
+    """Analyse an account against the bank, beside the cleared balance YNAB shows for it.
+
+    Args:
+        account: The account, as client.get_accounts returns it.
+        transactions: The plan's transactions, amounts in milliunits.
+        bank_balance: Balance shown by the bank, in currency units.
+
+    Returns:
+        The analysis, and whether the transactions add up to YNAB's cleared balance,
+        compared in milliunits.
+    """
+    ynab_cleared = client.amount_to_milliunit(account["cleared_balance"])
+    analysis = reconcile.analyse(
+        account["id"], transactions, bank_balance, ynab_cleared=ynab_cleared
+    )
+    return analysis, client.amount_to_milliunit(analysis.cleared_balance) == ynab_cleared
+
+
 async def _analyse(
     plan_id: str, account: dict[str, Any], bank_balance: float
-) -> tuple[list[dict[str, Any]], reconcile.Analysis]:
+) -> tuple[list[dict[str, Any]], reconcile.Analysis, bool]:
     """Analyse an account against the bank, from transactions that add up to YNAB's total.
 
     The transactions come from the delta-sync cache. When their cleared sum differs
-    from the cleared balance YNAB shows for the account, the cache is out of date:
-    it is dropped and the transactions loaded once more in full.
+    from the cleared balance YNAB shows for the account, the cache may be out of date,
+    or the account may have changed since it was read: both are read again together,
+    the transactions in full, and compared once more.
 
     Args:
         plan_id: YNAB plan id or 'last-used'.
@@ -76,21 +99,19 @@ async def _analyse(
         bank_balance: Balance shown by the bank, in currency units.
 
     Returns:
-        The plan's transactions and the analysis; its two cleared totals still differ
-        when the full load did not reconcile them either.
+        The plan's transactions, the analysis, and whether the two cleared totals agree.
     """
-    ynab_cleared = client.amount_to_milliunit(account["cleared_balance"])
     transactions = await client.get_transactions(plan_id)
-    analysis = reconcile.analyse(
-        account["id"], transactions, bank_balance, ynab_cleared=ynab_cleared
-    )
-    if analysis.cleared_balance != analysis.ynab_cleared_balance:
-        logger.warning("Cleared total differs from YNAB's: reloading the transactions in full")
-        transactions = await client.get_transactions(plan_id, fresh=True)
-        analysis = reconcile.analyse(
-            account["id"], transactions, bank_balance, ynab_cleared=ynab_cleared
+    analysis, agree = _against_ynab(account, transactions, bank_balance)
+    if not agree:
+        logger.warning("Cleared total differs from YNAB's: reading the account again in full")
+        accounts, transactions = await asyncio.gather(
+            client.get_accounts(plan_id), client.get_transactions(plan_id, fresh=True)
         )
-    return transactions, analysis
+        # The account read first stands in if it has vanished since.
+        account = {a["id"]: a for a in accounts}.get(account["id"], account)
+        analysis, agree = _against_ynab(account, transactions, bank_balance)
+    return transactions, analysis, agree
 
 
 # YNAB's own group, which holds the single "Inflow: Ready to Assign" category.
@@ -127,8 +148,9 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
     When balances match, every cleared transaction is marked reconciled after the
     user confirms (as for apply_categories). undo_operation reverts it. If the
     account's transactions do not add up to the cleared balance YNAB shows, even
-    after reloading them, nothing is asked or written (totals_disagree): ask the
-    user to check the account in YNAB.
+    after reading both again, nothing is asked or written (totals_disagree): call
+    again in a minute, or ask the user to look in YNAB for an import matched to, or
+    recently deleted from, the account.
 
     Args:
         plan_id: YNAB plan id or 'last-used'.
@@ -149,7 +171,7 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
     accounts = {a["id"]: a for a in await client.get_accounts(plan_id)}
     if account_id not in accounts:
         raise ToolError(f"Account {account_id} is not in this plan: use an id from list_accounts.")
-    transactions, analysis = await _analyse(plan_id, accounts[account_id], bank_balance)
+    transactions, analysis, agree = await _analyse(plan_id, accounts[account_id], bank_balance)
     difference = analysis.difference
     result = ReconcileResult(
         status="nothing_to_do",
@@ -160,15 +182,16 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
         confirmation=None,
         operation_id=None,
     )
-    if analysis.cleared_balance != analysis.ynab_cleared_balance:
+    if not agree:
         return result.model_copy(
             update={
                 "status": "totals_disagree",
                 "message": (
                     f"The account's cleared transactions add up to {analysis.cleared_balance:.2f}, "
                     f"but YNAB shows a cleared balance of {analysis.ynab_cleared_balance:.2f}, "
-                    "even after reloading them all. Nothing was changed. Ask the user to check "
-                    "the account in YNAB, then call again."
+                    "even after reading both again. Nothing was changed. YNAB may still be "
+                    "processing a change (call again in a minute); otherwise ask the user to look "
+                    "in YNAB for a bank import matched to, or recently deleted from, this account."
                 ),
             }
         )

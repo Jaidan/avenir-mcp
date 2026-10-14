@@ -20,8 +20,9 @@ adjust=true: a "Balance adjustment" transaction is added to Ready to Assign.
 When balances match, every cleared transaction is marked reconciled after the
 user confirms (as for apply_categories). undo_operation reverts it. If the
 account's transactions do not add up to the cleared balance YNAB shows, even
-after reloading them, nothing is asked or written (totals_disagree): ask the
-user to check the account in YNAB.
+after reading both again, nothing is asked or written (totals_disagree): call
+again in a minute, or ask the user to look in YNAB for an import matched to, or
+recently deleted from, the account.
 
 ## Behaviour
 

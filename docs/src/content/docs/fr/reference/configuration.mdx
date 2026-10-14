@@ -90,7 +90,10 @@ s'applique aussitôt, sans fenêtre de confirmation ni code, et le serveur l'éc
 journaux en avertissement. Les écritures que l'annulation ne peut pas défaire demandent
 toujours : `split_transaction`, `create_category`, `update_category`, l'approbation par
 dates, `apply_categories` avec `approve`, un objectif que YNAB ne peut pas remettre, et
-toute annulation. Un code de confirmation transmis est toujours vérifié. Incompatible avec
+toute annulation. Ainsi `reconcile_account` rapproche dès le premier appel quand les
+soldes concordent, et avec `adjust` crée aussitôt la transaction **Balance adjustment**.
+`approve_transactions` avec des identifiants ne demande jamais, avec ou sans ce réglage.
+Un code de confirmation transmis est toujours vérifié. Incompatible avec
 `AVENIR_MCP_REQUIRE_ELICITATION=1` : le serveur refuse de démarrer.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`

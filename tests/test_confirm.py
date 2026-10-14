@@ -322,6 +322,35 @@ def test_auto_confirm_logs_one_item_for_a_single_change(caplog: pytest.LogCaptur
     assert "c1" not in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("subject", "size"),
+    [
+        # apply_categories: its changes, then the approve flag, which is not a change.
+        (["change-1", "change-2", {"approve": False}], 2),
+        # reconcile_account: the transactions it reconciles, and the adjustment if any.
+        ({"account": "a1", "balance": 10.0, "adjust": 0, "transactions": ["t1", "t2"]}, 2),
+        ({"account": "a1", "balance": 10.0, "adjust": -1.5, "transactions": ["t1", "t2"]}, 3),
+        ({"account": "a1", "balance": 10.0, "adjust": -1.5, "transactions": []}, 1),
+        # create_transactions, set_category_budgets, flag_transactions.
+        ({"account": "a1", "items": ["x", "y", "z"], "approved": True}, 3),
+        ({"month": "2026-09-01", "budgets": [("c1", 1000), ("c2", 2000)]}, 2),
+        ({"flags": [("t1", "red")]}, 1),
+        # set_category_target: one target, whatever its fields.
+        ({"category": "c1", "fields": {"goal_target": 1000, "goal_target_date": None}}, 1),
+    ],
+)
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_logs_how_many_things_the_write_changes(
+    subject: object, size: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The count is of what is changed, the items inside a subject's list included."""
+    with caplog.at_level("WARNING", logger="avenir_mcp.confirm"):
+        assert _ask(_NeverAsk("2025-11-25"), subject) == "applied"
+    assert [r.getMessage() for r in caplog.records] == [
+        f"Auto-confirmed a write of {size} item(s) (AVENIR_MCP_AUTO_CONFIRM=1)"
+    ]
+
+
 @pytest.mark.usefixtures("auto", "required")
 def test_auto_confirm_never_overrides_required_elicitation() -> None:
     """Both set (server.main refuses this): ask() still asks the user in the client."""

@@ -91,7 +91,10 @@ aplica enseguida, sin ventana de confirmación ni código, y el servidor la regi
 advertencia. Las escrituras que no se pueden deshacer siguen preguntando:
 `split_transaction`, `create_category`, `update_category`, la aprobación por fechas,
 `apply_categories` con `approve`, un objetivo que YNAB no puede restaurar, y toda
-anulación. Un código de confirmación que se pase se sigue comprobando. No se combina con
+anulación. Así, `reconcile_account` concilia en la primera llamada cuando los saldos
+coinciden, y con `adjust` crea enseguida la transacción **Balance adjustment**. `approve_transactions` con
+identificadores nunca pregunta, con o sin este ajuste. Un código de confirmación que se
+pase se sigue comprobando. No se combina con
 `AVENIR_MCP_REQUIRE_ELICITATION=1`: el servidor se niega a arrancar.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`

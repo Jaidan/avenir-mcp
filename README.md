@@ -171,6 +171,10 @@ writes without the user's yes. With it set, a write that `undo_operation` can re
 applies without asking, and the server logs a warning for each one. Writes undo cannot
 revert still ask (`split_transaction`, `create_category`, `update_category`, approving by
 dates, `apply_categories` with `approve`, a target YNAB cannot set back, and every undo).
+`reconcile_account` reconciles on the first call when the balances match, and with
+`adjust` adds the balance adjustment at once. `approve_transactions` given ids never asks,
+with or without this setting (upstream behaviour), so the question `apply_categories`
+with `approve` still asks is no safeguard against approving.
 It cannot be combined with `AVENIR_MCP_REQUIRE_ELICITATION=1`. See
 [Configuration](https://avenir-mcp.pages.dev/avenir-mcp/reference/configuration/).
 

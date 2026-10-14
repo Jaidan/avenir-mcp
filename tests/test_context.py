@@ -206,7 +206,10 @@ def test_with_auto_confirm_the_guide_says_what_still_asks(monkeypatch: pytest.Mo
         "creating or editing categories",
         "approving by dates",
         "`apply_categories` with `approve`",
+        "a target YNAB cannot set back",
         "undos",
     ):
         assert still_asks in text
+    assert "reconciles on the first call when the balances match" in text
+    assert "pass `adjust` only when the user asked" in text
     assert "never use a code on your own initiative" in text

@@ -85,7 +85,9 @@ Exactly `1`, in this fork only: a write that `undo_operation` can revert applies
 without a confirmation box or a code, and the server logs a warning naming it. Writes undo
 cannot revert still ask: `split_transaction`, `create_category`, `update_category`,
 approving by dates, `apply_categories` with `approve`, a target YNAB cannot set back, and
-every undo. A confirmation code you pass is still checked. It cannot be combined with
+every undo. So `reconcile_account` reconciles on the first call when the balances match,
+and with `adjust` adds the balance adjustment at once. `approve_transactions` given ids
+never asks, with or without this setting. A confirmation code you pass is still checked. It cannot be combined with
 `AVENIR_MCP_REQUIRE_ELICITATION=1`: the server refuses to start.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`

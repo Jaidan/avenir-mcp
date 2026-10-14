@@ -257,6 +257,29 @@ async def _answer_in_client(
     return _answer(answer.action, {"value": getattr(answer, "data", None)})
 
 
+def _size(subject: object) -> int:
+    """Count what a write changes, for the auto-confirm log, without any of its text.
+
+    A list subject is apply_categories': its changes, then the approve flag, which is
+    not a change. A dict subject counts the items of its lists (the transactions
+    reconciled, created or flagged, the categories budgeted), plus reconcile_account's
+    balance adjustment; one without a list is a single change.
+
+    Args:
+        subject: The exact change being confirmed, as JSON data.
+
+    Returns:
+        The number of things the write changes.
+    """
+    if isinstance(subject, list):
+        return sum(1 for item in subject if not (isinstance(item, dict) and "approve" in item))
+    if not isinstance(subject, dict):
+        return 1
+    listed = sum(len(value) for value in subject.values() if isinstance(value, list))
+    adjustment = 1 if subject.get("adjust") else 0
+    return listed + adjustment or 1
+
+
 async def ask(  # pylint: disable=too-many-arguments
     ctx: Context,
     plan_id: str,
@@ -298,8 +321,9 @@ async def ask(  # pylint: disable=too-many-arguments
         return _spend_code(confirmation, plan_id, subject, required)
     if undoable and not required and os.getenv("AVENIR_MCP_AUTO_CONFIRM") == "1":
         # Only a size: the question carries bank text (payees, categories, accounts).
-        size = len(subject) if isinstance(subject, list) else 1
-        logger.warning("Auto-confirmed a write of %d item(s) (AVENIR_MCP_AUTO_CONFIRM=1)", size)
+        logger.warning(
+            "Auto-confirmed a write of %d item(s) (AVENIR_MCP_AUTO_CONFIRM=1)", _size(subject)
+        )
         return "applied"
     can_ask = ctx.session.check_client_capability(
         types.ClientCapabilities(elicitation=types.ElicitationCapability())

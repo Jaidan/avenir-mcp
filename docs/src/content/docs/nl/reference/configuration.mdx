@@ -88,7 +88,10 @@ terugdraaien, wordt meteen uitgevoerd, zonder bevestigingsvenster of code, en de
 logt een waarschuwing. Schrijfbewerkingen die niet terug te draaien zijn, vragen nog
 steeds: `split_transaction`, `create_category`, `update_category`, goedkeuren op datum,
 `apply_categories` met `approve`, een doel dat YNAB niet kan herstellen, en elke
-terugdraaiing. Een meegegeven bevestigingscode wordt nog steeds gecontroleerd. Niet te
+terugdraaiing. Zo stemt `reconcile_account` bij de eerste aanroep af als de saldi
+overeenkomen, en maakt het met `adjust` meteen de transactie **Balance adjustment** aan.
+`approve_transactions` met ids vraagt nooit, met of zonder deze instelling. Een meegegeven
+bevestigingscode wordt nog steeds gecontroleerd. Niet te
 combineren met `AVENIR_MCP_REQUIRE_ELICITATION=1`: de server weigert te starten.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`

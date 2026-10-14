@@ -91,7 +91,10 @@ kann, wird sofort angewendet, ohne Bestätigungsfeld und ohne Code, und der Serv
 protokolliert sie als Warnung. Schreibaktionen, die sich nicht rückgängig machen lassen,
 fragen weiterhin: `split_transaction`, `create_category`, `update_category`, das Freigeben
 nach Datum, `apply_categories` mit `approve`, ein Ziel, das YNAB nicht wiederherstellen
-kann, und jedes Rückgängigmachen. Ein übergebener Bestätigungscode wird weiterhin geprüft.
+kann, und jedes Rückgängigmachen. So gleicht `reconcile_account` beim ersten Aufruf ab,
+wenn die Salden übereinstimmen, und legt mit `adjust` die Transaktion **Balance adjustment** sofort an.
+`approve_transactions` mit IDs fragt nie, mit oder ohne diese Einstellung. Ein übergebener
+Bestätigungscode wird weiterhin geprüft.
 Nicht kombinierbar mit `AVENIR_MCP_REQUIRE_ELICITATION=1`: Der Server startet dann nicht.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`

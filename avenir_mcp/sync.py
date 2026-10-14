@@ -38,7 +38,9 @@ def merge(
 
     The copy is replaced in one step, once YNAB has answered: a load that fails
     leaves the previous copy whole, and a delta that lands during a full reload
-    still merges into every transaction.
+    still merges into every transaction. A delta older than the copy (answered
+    after a newer load) holds nothing the copy lacks: it is ignored, else it could
+    bring back a transaction the newer load no longer had.
 
     Args:
         plan_id: YNAB plan id.
@@ -51,9 +53,10 @@ def merge(
     Returns:
         Every live transaction of the plan's copy.
     """
-    known: dict[str, dict[str, Any]] = (
-        {} if fresh else _CACHE.get(plan_id, {}).get("transactions", {})
-    )
+    copy = _CACHE.get(plan_id)
+    if not fresh and copy is not None and server_knowledge < copy["server_knowledge"]:
+        return list(copy["transactions"].values())
+    known: dict[str, dict[str, Any]] = {} if fresh or copy is None else copy["transactions"]
     for tx in changes:
         if tx.get("deleted"):
             known.pop(tx["id"], None)

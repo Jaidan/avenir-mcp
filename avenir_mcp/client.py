@@ -466,6 +466,7 @@ async def get_transactions(
     transactions: list[dict[str, Any]] = payload["transactions"]
     if not cached:
         return [tx for tx in transactions if not tx.get("deleted")]
+    # YNAB always sends server_knowledge; a delta without it would count as stale and be dropped.
     return sync.merge(plan_id, transactions, payload.get("server_knowledge", 0), fresh=fresh)
 
 

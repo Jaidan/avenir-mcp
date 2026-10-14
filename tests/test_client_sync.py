@@ -86,3 +86,33 @@ def test_a_delta_during_a_failed_fresh_load_is_merged_into_the_whole_copy() -> N
             return await client.get_transactions("b1")
 
     assert asyncio.run(run()) == [{"id": "t1"}, {"id": "t2"}, {"id": "t3"}]
+
+
+def test_a_delta_landing_after_a_fresh_load_brings_back_nothing_it_absorbed() -> None:
+    """A delta started before a full reload, and answered after it, is older: it is ignored."""
+
+    async def run() -> list[dict[str, Any]]:
+        delta_sent, release_delta = asyncio.Event(), asyncio.Event()
+
+        async def get(_path: str, params: dict[str, Any]) -> dict[str, Any]:
+            if "last_knowledge_of_server" in params:
+                delta_sent.set()
+                await release_delta.wait()
+                return {"data": {"transactions": [{"id": "import"}], "server_knowledge": 2}}
+            return {"data": {"transactions": [{"id": "t1"}], "server_knowledge": 3}}
+
+        with patch("avenir_mcp.client._get", AsyncMock(return_value=_FULL)):
+            await client.get_transactions("b1")
+        with patch("avenir_mcp.client._get", get):
+            delta = asyncio.create_task(client.get_transactions("b1"))
+            await delta_sent.wait()
+            assert await client.get_transactions("b1", fresh=True) == [{"id": "t1"}]
+            release_delta.set()
+            await delta
+        empty = AsyncMock(return_value={"data": {"transactions": [], "server_knowledge": 3}})
+        with patch("avenir_mcp.client._get", empty):
+            rows = await client.get_transactions("b1")
+        assert empty.call_args.kwargs["params"]["last_knowledge_of_server"] == 3
+        return rows
+
+    assert asyncio.run(run()) == [{"id": "t1"}]

@@ -60,3 +60,10 @@ def test_clear_drops_every_plan() -> None:
     sync.merge("b1", [{"id": "a"}], 1)
     sync.clear()
     assert sync.knowledge("b1") is None
+
+
+def test_a_delta_older_than_the_copy_changes_nothing() -> None:
+    """A delta that lands after a newer load holds nothing new: copy and counter stay."""
+    sync.merge("b1", [{"id": "a"}], 4, fresh=True)
+    assert sync.merge("b1", [{"id": "ghost"}, {"id": "a", "deleted": True}], 2) == [{"id": "a"}]
+    assert sync.knowledge("b1") == 4

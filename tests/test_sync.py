@@ -46,13 +46,13 @@ def test_plans_are_kept_apart() -> None:
     assert (sync.knowledge("b1"), sync.knowledge("b2")) == (1, 9)
 
 
-def test_forget_drops_one_plan() -> None:
-    """A forgotten plan loads in full next time; the others keep their copy."""
-    sync.merge("b1", [{"id": "a"}], 1)
-    sync.merge("b2", [{"id": "b"}], 9)
-    sync.forget("b1")
-    sync.forget("never-loaded")
-    assert (sync.knowledge("b1"), sync.knowledge("b2")) == (None, 9)
+def test_a_full_reload_replaces_the_copy() -> None:
+    """fresh: what YNAB returned is the whole copy, even what it no longer mentions is gone."""
+    sync.merge("b1", [{"id": "stale"}, {"id": "a"}], 1)
+    assert sync.merge("b1", [{"id": "a"}, {"id": "gone", "deleted": True}], 4, fresh=True) == [
+        {"id": "a"}
+    ]
+    assert sync.knowledge("b1") == 4
 
 
 def test_clear_drops_every_plan() -> None:

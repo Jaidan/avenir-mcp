@@ -438,8 +438,9 @@ async def get_transactions(
         plan_id: YNAB plan id or "last-used".
         since_date: ISO date "YYYY-MM-DD"; only return transactions on/after.
         uncategorized_only: If True, only return uncategorized transactions.
-        fresh: If True, forget the plan's delta-sync cache and load it in full: a delta can
-            miss what YNAB absorbed, such as an import matched to a scheduled transaction.
+        fresh: If True, load every transaction and replace the plan's copy with them once
+            they arrive. YNAB's deltas have been seen to miss an import absorbed by a
+            match with a scheduled transaction; a full load does not.
 
     Returns:
         List of transaction dicts.
@@ -453,9 +454,7 @@ async def get_transactions(
     # Delta sync, only for a named plan and no filter: "last-used" may name another
     # plan from one call to the next, and changes are counted per plan.
     cached = not since_date and not uncategorized_only and plan_id != LAST_USED
-    if fresh:
-        sync.forget(plan_id)
-    since = sync.knowledge(plan_id) if cached else None
+    since = sync.knowledge(plan_id) if cached and not fresh else None
     if since is not None:
         params["last_knowledge_of_server"] = since
         logger.info("Delta sync: fetching transactions for %s since knowledge=%s", plan_id, since)
@@ -467,7 +466,7 @@ async def get_transactions(
     transactions: list[dict[str, Any]] = payload["transactions"]
     if not cached:
         return [tx for tx in transactions if not tx.get("deleted")]
-    return sync.merge(plan_id, transactions, payload.get("server_knowledge", 0))
+    return sync.merge(plan_id, transactions, payload.get("server_knowledge", 0), fresh=fresh)
 
 
 async def get_scheduled_transactions(plan_id: str) -> list[dict[str, Any]]:

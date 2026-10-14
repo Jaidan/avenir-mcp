@@ -32,20 +32,28 @@ def knowledge(plan_id: str) -> int | None:
 
 
 def merge(
-    plan_id: str, changes: list[dict[str, Any]], server_knowledge: int
+    plan_id: str, changes: list[dict[str, Any]], server_knowledge: int, *, fresh: bool = False
 ) -> list[dict[str, Any]]:
     """Merge what YNAB returned into a plan's copy, and return the whole copy.
+
+    The copy is replaced in one step, once YNAB has answered: a load that fails
+    leaves the previous copy whole, and a delta that lands during a full reload
+    still merges into every transaction.
 
     Args:
         plan_id: YNAB plan id.
         changes: The transactions YNAB returned: every one on a first load, only
             those changed since on a delta. Those marked deleted leave the copy.
         server_knowledge: YNAB's change counter for this load.
+        fresh: True for a full reload: `changes` becomes the whole copy, instead of
+            being merged into the previous one.
 
     Returns:
         Every live transaction of the plan's copy.
     """
-    known: dict[str, dict[str, Any]] = _CACHE.get(plan_id, {}).get("transactions", {})
+    known: dict[str, dict[str, Any]] = (
+        {} if fresh else _CACHE.get(plan_id, {}).get("transactions", {})
+    )
     for tx in changes:
         if tx.get("deleted"):
             known.pop(tx["id"], None)
@@ -53,15 +61,6 @@ def merge(
             known[tx["id"]] = tx
     _CACHE[plan_id] = {"server_knowledge": server_knowledge, "transactions": known}
     return list(known.values())
-
-
-def forget(plan_id: str) -> None:
-    """Drop a plan's copy, so that the next load is a full one.
-
-    Args:
-        plan_id: YNAB plan id.
-    """
-    _CACHE.pop(plan_id, None)
 
 
 def clear() -> None:

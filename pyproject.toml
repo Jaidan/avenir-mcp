@@ -263,6 +263,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_schedule.py",
     "tests/test_search.py",
     "tests/test_split.py",
+    "tests/test_sync.py",
     "tests/test_targets.py",
     "tests/test_text.py",
     "tests/test_triage.py",

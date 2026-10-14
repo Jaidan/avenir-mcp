@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 The avenir-mcp contributors
 # SPDX-License-Identifier: MIT
 
-"""YNAB API v1 wrapper — async httpx client with in-memory delta-sync cache."""
+"""YNAB API v1 wrapper — async httpx client; transactions kept current by sync.py."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import SecretStr
 
-from avenir_mcp import retry
+from avenir_mcp import retry, sync
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +83,6 @@ def _url(path: str) -> str:
 
 # The plan YNAB last opened: a moving target, never cached.
 LAST_USED = "last-used"
-
-# Delta-sync cache: {plan_id: {"server_knowledge": int, "transactions": {tx_id: tx}}}
-_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def _api_key() -> SecretStr:
@@ -455,17 +452,13 @@ async def get_transactions(
 
     # Delta sync, only for a named plan and no filter: "last-used" may name another
     # plan from one call to the next, and changes are counted per plan.
-    cache_key = plan_id
-    if fresh:
-        _CACHE.pop(cache_key, None)
     cached = not since_date and not uncategorized_only and plan_id != LAST_USED
-    if cached and cache_key in _CACHE:
-        params["last_knowledge_of_server"] = _CACHE[cache_key]["server_knowledge"]
-        logger.info(
-            "Delta sync: fetching transactions for %s since knowledge=%s",
-            plan_id,
-            params["last_knowledge_of_server"],
-        )
+    if fresh:
+        sync.forget(plan_id)
+    since = sync.knowledge(plan_id) if cached else None
+    if since is not None:
+        params["last_knowledge_of_server"] = since
+        logger.info("Delta sync: fetching transactions for %s since knowledge=%s", plan_id, since)
     else:
         logger.info("Fetching transactions for plan %s (full load)", plan_id)
 
@@ -474,20 +467,7 @@ async def get_transactions(
     transactions: list[dict[str, Any]] = payload["transactions"]
     if not cached:
         return [tx for tx in transactions if not tx.get("deleted")]
-
-    # A delta only holds what changed since the last load: merge it into the
-    # cached transactions, dropping the deleted ones.
-    known: dict[str, dict[str, Any]] = _CACHE.get(cache_key, {}).get("transactions", {})
-    for tx in transactions:
-        if tx.get("deleted"):
-            known.pop(tx["id"], None)
-        else:
-            known[tx["id"]] = tx
-    _CACHE[cache_key] = {
-        "server_knowledge": payload.get("server_knowledge", 0),
-        "transactions": known,
-    }
-    return list(known.values())
+    return sync.merge(plan_id, transactions, payload.get("server_knowledge", 0))
 
 
 async def get_scheduled_transactions(plan_id: str) -> list[dict[str, Any]]:

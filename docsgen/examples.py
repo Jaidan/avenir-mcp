@@ -285,7 +285,7 @@ async def _apply_first(mcp_client: Client[Any], tool: str, args: dict[str, Any])
 
 
 async def _capture(language: str) -> dict[str, Capture]:
-    from avenir_mcp import client, server  # pylint: disable=import-outside-toplevel
+    from avenir_mcp import client, server, sync  # pylint: disable=import-outside-toplevel
 
     server.configure(enable_writes=True)
     # Each language replays the same calls: the demo is not YNAB's hourly allowance.
@@ -296,7 +296,7 @@ async def _capture(language: str) -> dict[str, Capture]:
             args = _typed(call.args, language)
             if call.after_applying:
                 await _apply_first(mcp_client, *call.after_applying)
-            client._CACHE.clear()  # pylint: disable=protected-access
+            sync.clear()
             before = fake_ynab.STATE.requests
             result = await mcp_client.call_tool(call.tool, args, raise_on_error=False)
             requests = fake_ynab.STATE.requests - before

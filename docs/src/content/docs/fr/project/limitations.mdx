@@ -11,7 +11,7 @@ sidebar:
 |---|---|---|
 | Codes de confirmation | gardés en mémoire : un redémarrage du serveur les oublie | redemander un aperçu |
 | Annulation | locale à la machine dont le journal a enregistré l'opération ; une annulation ne s'annule pas | refaire le changement |
-| `approve_transactions` | s'applique aussitôt, sans aperçu | il ne lève que le marqueur de revue de YNAB |
+| `approve_transactions` par identifiants | s'applique aussitôt, sans aperçu ; ne s'annule pas | il ne lève que le marqueur de revue de YNAB ; l'approbation par dates est d'abord prévisualisée |
 | `import_transactions` | s'applique aussitôt, sans aperçu ; non annulable ici | il n'apporte que ce que la banque a déjà ; supprimer une transaction dans YNAB pour revenir en arrière |
 | `update_category`, `create_category` | non annulables ; l'API YNAB ne peut pas supprimer une catégorie | renommer à nouveau ; masquer la catégorie dans YNAB |
 | `rename_payee` | renomme un bénéficiaire à la fois ; l'API YNAB ne peut pas en fusionner deux, donc un nom qu'un autre bénéficiaire porte déjà est refusé | renommer aussi les autres libellés de la boutique, ou fusionner les bénéficiaires dans YNAB |

@@ -34,7 +34,7 @@ to ask you. A test fails if any tool lacks them.
 
 ## Preview and confirmation
 
-Every write but `approve_transactions` and `import_transactions` first computes its exact changes and applies
+Every write but `import_transactions` and `approve_transactions` by ids first computes its exact changes and applies
 nothing until you agree, through your client's own dialog or a single-use code bound to
 that preview. If the plan changes between the preview and your answer, the answer is
 refused. Details: [Confirmation](/avenir-mcp/concepts/confirmation/).

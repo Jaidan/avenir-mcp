@@ -15,7 +15,7 @@ MCP. La lista completa está en [Configuración](/avenir-mcp/es/reference/config
 | Ajuste | Efecto |
 |---|---|
 | nada (por defecto) | 19 herramientas de solo lectura; las 15 de escritura no se listan ni se pueden llamar |
-| `AVENIR_MCP_WRITE=1` | las 34 herramientas; cada herramienta de escritura salvo `approve_transactions` e `import_transactions` se previsualiza y confirma |
+| `AVENIR_MCP_WRITE=1` | las 34 herramientas; cada herramienta de escritura salvo `import_transactions` y `approve_transactions` por identificadores se previsualiza y confirma |
 
 Cualquier otro valor (`0`, `true`, `yes`) mantiene el servidor en solo lectura: solo `1`
 activa las escrituras.

@@ -80,8 +80,19 @@ Une fois classées :
 
 <Code code={approved} lang="json" title="approve_transactions" />
 
-`approve_transactions` ne fait que lever ce marqueur : il s'applique donc aussitôt, sans
-aperçu.
+`approve_transactions` avec des identifiants ne fait que lever ce marqueur : il
+s'applique donc aussitôt, sans aperçu. Une fois toute une période revue, il peut plutôt
+approuver par dates (`since_date`, et `until_date` ou `exclude_ids` si besoin) : chaque
+transaction de la période que la banque a pointée et qui a une catégorie, après un aperçu
+et votre confirmation. Ni l'un ni l'autre ne s'annule.
+
+Pour classer et approuver en une étape, passez `approve` à `apply_categories` : les
+transactions qu'il reçoit sont aussi approuvées, sans appel à `approve_transactions`.
+Son annulation rétablit les catégories mais laisse les transactions approuvées.
+
+Pour revoir un mois déjà classé, `find_transactions` filtre sur l'état :
+`approved=false` pour ce qui attend une revue, `cleared="uncleared"` pour ce que la
+banque n'a pas confirmé, `uncategorized=true` pour ce qui n'a pas de catégorie.
 
 ## Comment naissent les propositions
 

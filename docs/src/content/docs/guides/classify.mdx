@@ -79,7 +79,19 @@ classified:
 
 <Code code={approved} lang="json" title="approve_transactions" />
 
-`approve_transactions` only clears that flag, so it applies at once, without a preview.
+`approve_transactions` given ids only clears that flag, so it applies at once, without a
+preview. Once a whole period has been reviewed, it can approve by dates instead
+(`since_date`, and `until_date` or `exclude_ids` if needed): every transaction of the
+period that the bank cleared and that has a category, after a preview and your
+confirmation. Neither can be undone.
+
+To classify and approve in one step, pass `approve` to `apply_categories`: the
+transactions it is given are approved as well, and no `approve_transactions` call is
+needed. Its undo restores the categories but leaves the transactions approved.
+
+To review a month already classified, `find_transactions` filters on state:
+`approved=false` for what waits for review, `cleared="uncleared"` for what the bank has
+not confirmed, `uncategorized=true` for what has no category.
 
 ## How suggestions are made
 

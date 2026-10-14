@@ -41,6 +41,7 @@ bewerking bevat de bijbehorende `operation_id`.
 |---|---|---|
 | `apply_categories` | de vorige categorie van elke transactie | haar categorie sindsdien opnieuw is veranderd |
 | `set_category_budget` | het vorige bedrag | het bedrag sindsdien opnieuw is veranderd |
+| `set_category_budgets` | het vorige bedrag van elke categorie | haar bedrag sindsdien opnieuw is veranderd (de andere worden toch teruggezet) |
 | `move_money` | beide vorige bedragen | een van beide bedragen sindsdien opnieuw is veranderd (dan blijven beide ongemoeid) |
 | `flag_transactions` | de vorige vlag van elke transactie | de vlag sindsdien opnieuw is veranderd |
 | `rename_payee` | de vorige naam van de begunstigde | die sindsdien opnieuw is hernoemd |
@@ -54,7 +55,8 @@ werk.
 **Niet ongedaan te maken:** `update_category` (roep het opnieuw aan met de vorige naam en
 groep), `create_category` (verberg de categorie in YNAB), `split_transaction` (de API van
 YNAB kan een splitsing niet wijzigen: bewerk haar in YNAB), `approve_transactions` (de
-goedkeuring is een controlemarkering).
+goedkeuring is een controlemarkering). `apply_categories` met `approve` ongedaan maken
+zet de categorieën terug, maar de transacties blijven goedgekeurd.
 
 <Aside type="note">
 Een ongedaanmaking kan zelf niet ongedaan worden gemaakt, en ongedaan maken werkt op de

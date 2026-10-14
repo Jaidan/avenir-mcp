@@ -92,14 +92,14 @@ de chaque outil, cache froid, est mesuré sur le plan de démonstration et indiq
 | Coût | Outils |
 |---|---|
 | 0 | tout appel refusé par la validation (mois mal formé, nom vide…) |
-| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions`, l'aperçu de `set_category_budget`, l'aperçu de `move_money`, l'aperçu de `flag_transactions`, l'aperçu de `set_category_target` |
+| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions` par identifiants, l'aperçu de `set_category_budget`, l'aperçu de `set_category_budgets`, l'aperçu de `move_money`, l'aperçu de `flag_transactions`, l'aperçu de `set_category_target` |
 | 2 | `get_net_worth_trend`, `get_runway`, `get_debt_payoff_plan` sans `monthly_budget` quand un paiement minimum manque, `reconcile_account`, `create_transactions`, `create_category`, `update_category`, `list_payees`, un aperçu de `rename_payee`, `undo_operation` |
-| 3 | `get_runway` avec `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (une page entière), `apply_categories`, l'aperçu de `split_transaction` |
-| 4 | `forecast_balance` |
+| 3 | `get_runway` avec `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (une page entière), `apply_categories`, l'aperçu de `split_transaction`, l'aperçu de `approve_transactions` par dates |
+| 4 | `forecast_balance`, `reconcile_account` quand les totaux divergent et qu'il les relit |
 | 1 + N | `get_spending_trends` sur N mois |
 
 Appliquer une écriture confirmée ajoute sa propre requête (un seul `PATCH` groupé, quel
-que soit le nombre de transactions). Avec un cache chaud, relire les transactions coûte
+que soit le nombre de transactions ; `set_category_budgets` en envoie une par catégorie modifiée). Avec un cache chaud, relire les transactions coûte
 une petite requête incrémentale.
 
 Quand le quota est épuisé, YNAB répond `429`, et **cette réponse n'est jamais

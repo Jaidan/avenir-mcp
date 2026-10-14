@@ -90,14 +90,14 @@ elke tool kost met een lege cache, wordt gemeten op het demoplan en vermeld op z
 | Kosten | Tools |
 |---|---|
 | 0 | elke aanroep die door de controle wordt geweigerd (een verkeerd geschreven maand, een lege naam…) |
-| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions`, een voorbeeld van `set_category_budget`, een voorbeeld van `move_money`, een voorbeeld van `flag_transactions`, een voorbeeld van `set_category_target` |
+| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions` met ids, een voorbeeld van `set_category_budget`, een voorbeeld van `set_category_budgets`, een voorbeeld van `move_money`, een voorbeeld van `flag_transactions`, een voorbeeld van `set_category_target` |
 | 2 | `get_net_worth_trend`, `get_runway`, `get_debt_payoff_plan` zonder `monthly_budget` als een minimale betaling ontbreekt, `reconcile_account`, `create_transactions`, `create_category`, `update_category`, `list_payees`, een voorbeeld van `rename_payee`, `undo_operation` |
-| 3 | `get_runway` met `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (een hele pagina), `apply_categories`, een voorbeeld van `split_transaction` |
-| 4 | `forecast_balance` |
+| 3 | `get_runway` met `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (een hele pagina), `apply_categories`, een voorbeeld van `split_transaction`, een voorbeeld van `approve_transactions` op datum |
+| 4 | `forecast_balance`, `reconcile_account` als de totalen niet overeenkomen en het ze opnieuw leest |
 | 1 + N | `get_spending_trends` over N maanden |
 
 Het toepassen van een bevestigde schrijfactie voegt een eigen verzoek toe (één gebundelde
-`PATCH` voor elk aantal transacties). Met een warme cache kost opnieuw lezen van de
+`PATCH` voor elk aantal transacties; `set_category_budgets` stuurt er één per gewijzigde categorie). Met een warme cache kost opnieuw lezen van de
 transacties één klein deltaverzoek.
 
 Wanneer het quotum is opgebruikt, geeft YNAB het antwoord `429`, en **dat

@@ -41,6 +41,7 @@ l'opération 3f9a… »*. La réponse de chaque opération appliquée porte son 
 |---|---|---|
 | `apply_categories` | la catégorie précédente de chaque transaction | sa catégorie a de nouveau changé depuis |
 | `set_category_budget` | l'ancien montant | le montant a de nouveau changé depuis |
+| `set_category_budgets` | l'ancien montant de chaque catégorie | son montant a de nouveau changé depuis (les autres sont tout de même rétablies) |
 | `move_money` | les deux anciens montants | l'un des deux montants a de nouveau changé depuis (aucun n'est alors touché) |
 | `flag_transactions` | le drapeau précédent de chaque transaction | son drapeau a de nouveau changé depuis |
 | `rename_payee` | le nom précédent du bénéficiaire | il a été renommé depuis |
@@ -53,7 +54,8 @@ travail plus récent.
 
 **Ne s'annulent pas :** `update_category` (rappelez-le avec l'ancien nom et l'ancien
 groupe), `create_category` (masquez la catégorie dans YNAB), `split_transaction` (l'API YNAB ne peut pas modifier une ventilation : éditez-la dans YNAB), `approve_transactions`
-(l'approbation n'est qu'un marqueur de revue).
+(l'approbation n'est qu'un marqueur de revue). Annuler `apply_categories` appelé avec
+`approve` rétablit les catégories mais laisse les transactions approuvées.
 
 <Aside type="note">
 Une annulation ne s'annule pas elle-même, et l'annulation fonctionne sur la machine dont

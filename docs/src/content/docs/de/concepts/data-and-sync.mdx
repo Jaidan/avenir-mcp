@@ -93,14 +93,14 @@ Tool bei leerem Cache kostet, wird auf dem Demo-Plan gemessen und auf seiner
 | Kosten | Tools |
 |---|---|
 | 0 | jeder durch die Prüfung abgelehnte Aufruf (ein fehlerhafter Monat, ein leerer Name…) |
-| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions`, eine Vorschau von `set_category_budget`, eine Vorschau von `move_money`, eine Vorschau von `flag_transactions`, eine Vorschau von `set_category_target` |
+| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions` mit IDs, eine Vorschau von `set_category_budget`, eine Vorschau von `set_category_budgets`, eine Vorschau von `move_money`, eine Vorschau von `flag_transactions`, eine Vorschau von `set_category_target` |
 | 2 | `get_net_worth_trend`, `get_runway`, `get_debt_payoff_plan` ohne `monthly_budget`, wenn eine Mindestzahlung fehlt, `reconcile_account`, `create_transactions`, `create_category`, `update_category`, `list_payees`, eine Vorschau von `rename_payee`, `undo_operation` |
-| 3 | `get_runway` mit `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (eine ganze Seite), `apply_categories`, eine Vorschau von `split_transaction` |
-| 4 | `forecast_balance` |
+| 3 | `get_runway` mit `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (eine ganze Seite), `apply_categories`, eine Vorschau von `split_transaction`, eine Vorschau von `approve_transactions` nach Datum |
+| 4 | `forecast_balance`, `reconcile_account`, wenn die Summen abweichen und es sie erneut liest |
 | 1 + N | `get_spending_trends` über N Monate |
 
 Das Anwenden einer bestätigten Schreibaktion fügt eine eigene Anfrage hinzu (ein
-gebündeltes `PATCH` für beliebig viele Transaktionen). Mit warmem Cache kostet das erneute
+gebündeltes `PATCH` für beliebig viele Transaktionen; `set_category_budgets` sendet eine je geänderter Kategorie). Mit warmem Cache kostet das erneute
 Lesen der Transaktionen eine kleine Delta-Anfrage.
 
 Ist das Kontingent aufgebraucht, antwortet YNAB mit `429`, und **diese Antwort

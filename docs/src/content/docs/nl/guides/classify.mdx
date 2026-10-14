@@ -80,8 +80,20 @@ zijn geclassificeerd:
 
 <Code code={approved} lang="json" title="approve_transactions" />
 
-`approve_transactions` haalt alleen die markering weg en wordt dus meteen toegepast,
-zonder voorbeeld.
+`approve_transactions` met ids haalt alleen die markering weg en wordt dus meteen
+toegepast, zonder voorbeeld. Is een hele periode nagekeken, dan kan het in plaats daarvan
+op datum goedkeuren (`since_date`, en zo nodig `until_date` of `exclude_ids`): elke
+transactie van de periode die de bank heeft bevestigd en die een categorie heeft, na een
+voorbeeld en uw bevestiging. Geen van beide is ongedaan te maken.
+
+Om in één stap te categoriseren en goed te keuren, geeft u `approve` mee aan
+`apply_categories`: de transacties die het krijgt worden ook goedgekeurd, zonder aanroep
+van `approve_transactions`. Ongedaan maken zet de categorieën terug, maar de transacties
+blijven goedgekeurd.
+
+Om een al gecategoriseerde maand na te kijken, filtert `find_transactions` op status:
+`approved=false` voor wat op controle wacht, `cleared="uncleared"` voor wat de bank niet
+heeft bevestigd, `uncategorized=true` voor wat geen categorie heeft.
 
 ## Hoe suggesties ontstaan
 

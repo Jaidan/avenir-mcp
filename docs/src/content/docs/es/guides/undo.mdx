@@ -41,6 +41,7 @@ respuesta de cada operación aplicada lleva su `operation_id`.
 |---|---|---|
 | `apply_categories` | la categoría anterior de cada transacción | su categoría ha vuelto a cambiar |
 | `set_category_budget` | el importe anterior | el importe ha vuelto a cambiar |
+| `set_category_budgets` | el importe anterior de cada categoría | su importe ha vuelto a cambiar (las demás se restauran igualmente) |
 | `move_money` | los dos importes anteriores | uno de los dos importes ha vuelto a cambiar (entonces no se toca ninguno) |
 | `flag_transactions` | la bandera anterior de cada transacción | su bandera ha vuelto a cambiar |
 | `rename_payee` | el nombre anterior del beneficiario | se le ha vuelto a cambiar el nombre |
@@ -53,7 +54,8 @@ posterior.
 
 **No se puede deshacer:** `update_category` (llámela de nuevo con el nombre y el grupo
 anteriores), `create_category` (oculte la categoría en YNAB), `split_transaction` (la API de YNAB no puede cambiar una división: edítela en YNAB), `approve_transactions` (la
-aprobación es una marca de revisión).
+aprobación es una marca de revisión). Deshacer `apply_categories` llamado con `approve`
+restaura las categorías pero deja las transacciones aprobadas.
 
 <Aside type="note">
 Una anulación no se puede deshacer, y la anulación funciona en la máquina cuyo

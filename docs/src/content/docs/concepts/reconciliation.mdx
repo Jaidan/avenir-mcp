@@ -41,6 +41,7 @@ winter — out of the answer.
 | Situation | `status` | Written |
 |---|---|---|
 | balances differ, no `adjust` | `difference_found` | nothing, and nothing asked |
+| transactions do not add up to YNAB's cleared balance, even after a full reload | `totals_disagree` | nothing, and nothing asked |
 | balances match, nothing left to reconcile | `nothing_to_do` | nothing |
 | balances match | `confirmation_required`, then `applied` | cleared → reconciled |
 | balances differ, `adjust=true` | `confirmation_required`, then `applied` | an adjustment, then cleared → reconciled |

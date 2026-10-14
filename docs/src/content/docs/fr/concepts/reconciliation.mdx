@@ -41,6 +41,7 @@ le même hôtel l'hiver dernier.
 | Situation | `status` | Écrit |
 |---|---|---|
 | soldes différents, sans `adjust` | `difference_found` | rien, et rien demandé |
+| les transactions ne font pas le solde pointé de YNAB, même après un rechargement complet | `totals_disagree` | rien, et rien demandé |
 | soldes égaux, rien à rapprocher | `nothing_to_do` | rien |
 | soldes égaux | `confirmation_required`, puis `applied` | pointées → rapprochées |
 | soldes différents, `adjust=true` | `confirmation_required`, puis `applied` | un ajustement, puis pointées → rapprochées |

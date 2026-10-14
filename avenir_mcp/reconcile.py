@@ -44,6 +44,9 @@ class Analysis(Model):
     """Balance the bank shows, as given."""
     cleared_balance: float
     """Sum of the account's cleared and reconciled transactions in YNAB."""
+    ynab_cleared_balance: float | None
+    """Cleared balance YNAB itself shows for the account; null when not checked. It equals
+    cleared_balance unless avenir-mcp's copy of the transactions is out of date."""
     working_balance: float
     """Sum of all the account's transactions, cleared or not."""
     difference: float
@@ -105,6 +108,7 @@ def analyse(
     transactions: list[dict[str, Any]],
     bank_balance: float,
     today: date | None = None,
+    ynab_cleared: int | None = None,
 ) -> Analysis:
     """Analyse an account's cleared balance against the balance the bank shows.
 
@@ -116,6 +120,8 @@ def analyse(
         transactions: The plan's transactions, amounts in milliunits.
         bank_balance: The balance the bank shows, in currency units.
         today: The day of the analysis; defaults to today.
+        ynab_cleared: The cleared balance YNAB shows for the account, in milliunits,
+            to set beside the sum of the transactions; None to leave it unchecked.
 
     Returns:
         The balances, the difference, and what may explain it.
@@ -132,6 +138,7 @@ def analyse(
         account_id=account_id,
         bank_balance=bank_balance,
         cleared_balance=milliunit_to_amount(cleared_total),
+        ynab_cleared_balance=None if ynab_cleared is None else milliunit_to_amount(ynab_cleared),
         working_balance=milliunit_to_amount(sum(tx["amount"] for tx in live)),
         difference=milliunit_to_amount(difference),
         to_reconcile_count=sum(1 for tx in cleared if tx.get("cleared") == "cleared"),

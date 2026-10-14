@@ -430,6 +430,7 @@ async def get_transactions(
     plan_id: str,
     since_date: str | None = None,
     uncategorized_only: bool = False,
+    fresh: bool = False,
 ) -> list[dict[str, Any]]:
     """Return transactions for a plan, with optional filters.
 
@@ -440,6 +441,8 @@ async def get_transactions(
         plan_id: YNAB plan id or "last-used".
         since_date: ISO date "YYYY-MM-DD"; only return transactions on/after.
         uncategorized_only: If True, only return uncategorized transactions.
+        fresh: If True, forget the plan's delta-sync cache and load it in full: a delta can
+            miss what YNAB absorbed, such as an import matched to a scheduled transaction.
 
     Returns:
         List of transaction dicts.
@@ -453,6 +456,8 @@ async def get_transactions(
     # Delta sync, only for a named plan and no filter: "last-used" may name another
     # plan from one call to the next, and changes are counted per plan.
     cache_key = plan_id
+    if fresh:
+        _CACHE.pop(cache_key, None)
     cached = not since_date and not uncategorized_only and plan_id != LAST_USED
     if cached and cache_key in _CACHE:
         params["last_knowledge_of_server"] = _CACHE[cache_key]["server_knowledge"]

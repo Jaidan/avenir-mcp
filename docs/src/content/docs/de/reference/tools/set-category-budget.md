@@ -12,7 +12,8 @@ Aus dem Code erzeugt mit `python -m docsgen`; ein Test schlägt fehl, sobald die
 Set the amount budgeted ("Assigned") in a category for a month, after the user confirms.
 
 The amount is absolute, in currency units, not a change. The result gives the
-amount before and after; undo_operation restores the previous one.
+amount before and after; undo_operation restores the previous one. For more than
+one category, use set_category_budgets: one confirmation for all of them.
 Confirmation works as for apply_categories.
 
 ## Verhalten
@@ -81,8 +82,8 @@ Antwort auf dem Demo-Budget:
 
 ## Fehler
 
-- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `month must be 'current' or the first day of a month as YYYY-MM-01, got '{month}'.`
+- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
 - `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
 - `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`

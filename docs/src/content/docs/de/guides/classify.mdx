@@ -80,8 +80,20 @@ sie kategorisiert sind:
 
 <Code code={approved} lang="json" title="approve_transactions" />
 
-`approve_transactions` entfernt nur dieses Kennzeichen und wird daher sofort angewendet,
-ohne Vorschau.
+`approve_transactions` mit IDs entfernt nur dieses Kennzeichen und wird daher sofort
+angewendet, ohne Vorschau. Ist ein ganzer Zeitraum geprüft, kann es stattdessen nach Datum
+freigeben (`since_date`, bei Bedarf `until_date` oder `exclude_ids`): jede Transaktion des
+Zeitraums, die die Bank bestätigt hat und die eine Kategorie hat, nach einer Vorschau und
+Ihrer Bestätigung. Beides ist nicht rückgängig zu machen.
+
+Um in einem Schritt zu kategorisieren und freizugeben, geben Sie `apply_categories`
+`approve` mit: die übergebenen Transaktionen werden ebenfalls freigegeben, ein Aufruf von
+`approve_transactions` ist nicht nötig. Sein Rückgängigmachen stellt die Kategorien
+wieder her, die Transaktionen bleiben aber freigegeben.
+
+Um einen bereits kategorisierten Monat zu prüfen, filtert `find_transactions` nach
+Zustand: `approved=false` für das, was auf Prüfung wartet, `cleared="uncleared"` für das,
+was die Bank nicht bestätigt hat, `uncategorized=true` für das, was keine Kategorie hat.
 
 ## Wie Vorschläge entstehen
 

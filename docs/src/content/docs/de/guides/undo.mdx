@@ -41,6 +41,7 @@ Um eine ältere Operation rückgängig zu machen, nennen Sie ihre ID: *„mach O
 |---|---|---|
 | `apply_categories` | die vorherige Kategorie jeder Transaktion | ihre Kategorie sich seither erneut geändert hat |
 | `set_category_budget` | den vorherigen Betrag | der Betrag sich seither erneut geändert hat |
+| `set_category_budgets` | den vorherigen Betrag jeder Kategorie | ihr Betrag sich seither erneut geändert hat (die anderen werden trotzdem wiederhergestellt) |
 | `move_money` | beide vorherigen Beträge | einer der beiden Beträge sich seither erneut geändert hat (dann bleiben beide unberührt) |
 | `flag_transactions` | die vorherige Markierung jeder Buchung | ihre Markierung sich seither erneut geändert hat |
 | `rename_payee` | der vorherige Name des Zahlungsempfängers | er seither erneut umbenannt wurde |
@@ -55,6 +56,8 @@ nie spätere Arbeit.
 Namen und der vorherigen Gruppe auf), `create_category` (blenden Sie die Kategorie in YNAB
 aus), `split_transaction` (die API von YNAB kann eine Aufteilung nicht ändern: bearbeiten
 Sie sie in YNAB), `approve_transactions` (die Freigabe ist ein Prüfkennzeichen).
+`apply_categories` mit `approve` rückgängig zu machen stellt die Kategorien wieder her,
+die Transaktionen bleiben aber freigegeben.
 
 <Aside type="note">
 Ein Rückgängigmachen lässt sich selbst nicht rückgängig machen, und es funktioniert auf

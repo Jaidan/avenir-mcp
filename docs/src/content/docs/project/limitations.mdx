@@ -11,7 +11,7 @@ sidebar:
 |---|---|---|
 | Confirmation codes | kept in memory: a server restart forgets them | ask again for a new preview |
 | Undo | local to the machine whose journal recorded the operation; an undo cannot be undone | redo the change |
-| `approve_transactions` | applies at once, without preview | it only clears YNAB's review flag |
+| `approve_transactions` by ids | applies at once, without preview; not undoable | it only clears YNAB's review flag; approving by dates is previewed first |
 | `import_transactions` | applies at once, without preview; not undoable here | it only brings in what the bank already has; delete a transaction in YNAB to take it back |
 | `update_category`, `create_category` | not undoable; YNAB's API cannot delete a category | rename back; hide the category in YNAB |
 | `rename_payee` | renames one payee at a time; YNAB's API cannot merge two, so a name another payee already has is refused | rename the other labels of the shop too, or merge the payees in YNAB |

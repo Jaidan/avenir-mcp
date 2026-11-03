@@ -88,14 +88,14 @@ costs, on a cold cache, is measured on the demo plan and stated on its
 | Cost | Tools |
 |---|---|
 | 0 | any call refused by validation (a malformed month, an empty name…) |
-| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions`, a preview of `set_category_budget`, a preview of `move_money`, a preview of `flag_transactions`, a preview of `set_category_target` |
+| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions` by ids, a preview of `set_category_budget`, a preview of `set_category_budgets`, a preview of `move_money`, a preview of `flag_transactions`, a preview of `set_category_target` |
 | 2 | `get_net_worth_trend`, `get_runway`, `get_debt_payoff_plan` without `monthly_budget` when a minimum payment is missing, `reconcile_account`, `create_transactions`, `create_category`, `update_category`, `list_payees`, a preview of `rename_payee`, `undo_operation` |
-| 3 | `get_runway` with `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (a whole page), `apply_categories`, a preview of `split_transaction` |
-| 4 | `forecast_balance` |
+| 3 | `get_runway` with `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (a whole page), `apply_categories`, a preview of `split_transaction`, a preview of `approve_transactions` by dates |
+| 4 | `forecast_balance`, `reconcile_account` when the totals disagree and it reads them again |
 | 1 + N | `get_spending_trends` over N months |
 
 Applying a confirmed write adds its own request (one bulk `PATCH` for any number of
-transactions). With a warm cache, reading transactions again costs one small delta
+transactions; `set_category_budgets` sends one per category it changes). With a warm cache, reading transactions again costs one small delta
 request.
 
 When the quota is spent YNAB answers `429`, and **that answer is never retried**:

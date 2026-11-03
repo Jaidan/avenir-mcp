@@ -18,6 +18,7 @@ blok van uw MCP-client of in de shell waarmee het programma wordt gestart. Er wo
 |  `YNAB_API_KEY_FILE`| niet ingesteld | Een bestand waarin het token is opgeslagen, dat wordt gebruikt wanneer  niet is`YNAB_API_KEY` ingesteld. |
 |  `AVENIR_MCP_WRITE`| niet ingesteld: alleen-lezen |  `1`registreert de tools die uw plan wijzigen. |
 |  `AVENIR_MCP_REQUIRE_ELICITATION`| niet ingesteld |  `1`accepteert alleen een ‘ja’ dat in de client wordt opgegeven: geen bevestigingscodes. |
+| `AVENIR_MCP_AUTO_CONFIRM` | niet ingesteld | `1` (alleen deze fork) voert schrijfbewerkingen die `undo_operation` kan terugdraaien uit zonder te vragen. |
 |  `AVENIR_MCP_TRANSPORT`|  `stdio`|  `stdio`of `http`. |
 |  `AVENIR_MCP_HOST`|  `127.0.0.1`| HTTP-adres. |
 |  `AVENIR_MCP_PORT`|  `8103`| HTTP-poort. |
@@ -68,7 +69,7 @@ macOS vraagt misschien één keer of `security` het item mag lezen.
 
 ### `AVENIR_MCP_WRITE`
 
-Precies `1` registreert de 14 schrijftools. Elke andere waarde, of geen, houdt de server
+Precies `1` registreert de 15 schrijftools. Elke andere waarde, of geen, houdt de server
 alleen lezend: die tools worden dan niet getoond en zijn niet aan te roepen. Wordt één keer
 gelezen, bij het opstarten.
 
@@ -79,6 +80,19 @@ bevestigingsvenster van de client ‘ja’ heeft gezegd. Er worden geen bevestig
 vraag geldt als ‘nee’, en een client die geen vraag kan stellen, krijgt een foutmelding. Gebruik dit wanneer het model
 mogelijk een code doorgeeft zonder u hierom te vragen — zie
 [Bevestiging](/avenir-mcp/concepts/confirmation/#requiring-the-users-own-answer).
+
+### `AVENIR_MCP_AUTO_CONFIRM`
+
+Precies `1`, alleen in deze fork: een schrijfbewerking die `undo_operation` kan
+terugdraaien, wordt meteen uitgevoerd, zonder bevestigingsvenster of code, en de server
+logt een waarschuwing. Schrijfbewerkingen die niet terug te draaien zijn, vragen nog
+steeds: `split_transaction`, `create_category`, `update_category`, goedkeuren op datum,
+`apply_categories` met `approve`, een doel dat YNAB niet kan herstellen, en elke
+terugdraaiing. Zo stemt `reconcile_account` bij de eerste aanroep af als de saldi
+overeenkomen, en maakt het met `adjust` meteen de transactie **Balance adjustment** aan.
+`approve_transactions` met ids vraagt nooit, met of zonder deze instelling. Een meegegeven
+bevestigingscode wordt nog steeds gecontroleerd. Niet te
+combineren met `AVENIR_MCP_REQUIRE_ELICITATION=1`: de server weigert te starten.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`
 

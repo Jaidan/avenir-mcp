@@ -32,6 +32,7 @@ GUIDE_TITLES: dict[str, dict[str, str]] = json.loads(
 UNDOABLE = {
     "apply_categories",
     "set_category_budget",
+    "set_category_budgets",
     "move_money",
     "reconcile_account",
     "create_transactions",
@@ -39,7 +40,9 @@ UNDOABLE = {
     "set_category_target",
     "rename_payee",
 }
-UNCONFIRMED_WRITES = {"approve_transactions", "import_transactions"}
+UNCONFIRMED_WRITES = {"import_transactions"}
+# Writes whose confirmation depends on the mode: ids at once, a filter after asking.
+CONFIRMED_BY_MODE = {"approve_transactions"}
 
 # Tool -> the page that shows it at work.
 GUIDES = {
@@ -62,6 +65,7 @@ GUIDES = {
     "get_runway": "guides/plan-ahead",
     "get_debt_payoff_plan": "guides/plan-ahead",
     "set_category_budget": "guides/categories",
+    "set_category_budgets": "guides/categories",
     "move_money": "guides/monthly-review",
     "create_transactions": "guides/missing-transactions",
     "create_category": "guides/categories",
@@ -138,9 +142,12 @@ def _behaviour(tool: Any, label: dict[str, str], capture: Capture | None) -> lis
     ann = tool.annotations
     read = ann.read_only_hint is True
     confirmed = not read and tool.name not in UNCONFIRMED_WRITES
+    confirmation = label["confirm_yes"] if confirmed else label["confirm_no"]
+    if tool.name in CONFIRMED_BY_MODE:
+        confirmation = label["confirm_modes"]
     rows = [
         (label["kind"], label["read"] if read else label["write"]),
-        (label["confirmation"], label["confirm_yes"] if confirmed else label["confirm_no"]),
+        (label["confirmation"], confirmation),
         (label["undo"], label["undo_yes"] if tool.name in UNDOABLE else label["undo_no"]),
     ]
     if not read:

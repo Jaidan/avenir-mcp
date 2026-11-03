@@ -18,8 +18,9 @@ category: one line per category, not per item. Transactions already split,
 off-budget ones and transfers are refused, except a transfer from an
 on-budget account to a tracking one, which YNAB does split. YNAB's API
 cannot change a split afterwards: undo_operation cannot revert it, the user
-edits it in YNAB; the user is told before confirming. Confirmation works as
-for apply_categories.
+edits it in YNAB; the user is told before confirming. With approve, the
+transaction is approved too; nothing undoes that approval. Confirmation works
+as for apply_categories.
 
 ## Comportement
 
@@ -38,6 +39,7 @@ for apply_categories.
 | `plan_id` | string | oui | — | YNAB plan id or 'last-used'. |
 | `transaction_id` | string | oui | — | Transaction to split (from suggest_categories). |
 | `lines` | array of object | oui | — | The lines, at least two, adding up to the transaction's amount. |
+| `approve` | boolean | non | `false` | Also approve it (YNAB's "reviewed"), as YNAB does when you split there. Neither undo_operation nor this tool reverts the approval. |
 | `confirmation` | string \| null | non | `null` | Code from a previous "confirmation_required" result. |
 
 ## Retour

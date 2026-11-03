@@ -63,6 +63,10 @@ class WriteResult(Model):
     """Every transaction that changes: before and after."""
     unchanged_count: int
     """Assignments that would change nothing and were skipped."""
+    approvals: list[writes.Change]
+    """Transactions already in the right category, approved by the same call (approve=true);
+    in a preview, the ones it would approve.
+    """
     conflicts: list[str]
     """Ids left alone because they changed since the operation (undo only)."""
     confirmation: str | None
@@ -79,7 +83,7 @@ def result_of(status: WriteStatus, message: str, plan: writes.Plan, **extra: Any
     Args:
         status: The outcome.
         message: What happened and what to do next, for the agent to relay.
-        plan: The changes, unchanged count and conflicts to report.
+        plan: The changes, rows approved, unchanged count and conflicts to report.
         **extra: confirmation and operation_id, when there are any.
 
     Returns:
@@ -90,6 +94,7 @@ def result_of(status: WriteStatus, message: str, plan: writes.Plan, **extra: Any
         message=message,
         changes=plan.changes,
         unchanged_count=plan.unchanged_count,
+        approvals=plan.to_approve,
         conflicts=plan.conflicts,
         confirmation=extra.get("confirmation"),
         operation_id=extra.get("operation_id"),
@@ -97,25 +102,50 @@ def result_of(status: WriteStatus, message: str, plan: writes.Plan, **extra: Any
 
 
 def describe(plan: writes.Plan, action: str) -> str:
-    """Write the question put to the user: the first 20 changes, and how many more.
+    """Write the question put to the user: the first 20 rows, and how many more.
+
+    The changes come first, then the transactions only approved.
 
     Args:
-        plan: The changes to confirm.
+        plan: The changes, and the transactions to approve, to confirm.
         action: What is done to them, e.g. "Recategorise".
 
     Returns:
         The question; bank text in it is made safe to show.
     """
-    lines = [
-        f"- {c.date} {untrusted(c.payee)} {c.amount:.2f}: "
-        f"{untrusted(c.from_category) or 'no category'} → "
-        f"{untrusted(c.to_category) or 'no category'}"
-        for c in plan.changes[:20]
+    rows = [
+        *(
+            f"{untrusted(c.from_category) or 'no category'} → "
+            f"{untrusted(c.to_category) or 'no category'}"
+            for c in plan.changes
+        ),
+        *(f"{untrusted(c.to_category) or 'no category'} (approve)" for c in plan.to_approve),
     ]
-    more = len(plan.changes) - len(lines)
-    if more > 0:
-        lines.append(f"- … and {more} more")
-    return f"{action} {len(plan.changes)} transaction(s)?\n" + "\n".join(lines)
+    every = [*plan.changes, *plan.to_approve]
+    return rows_question(
+        action,
+        [
+            f"{c.date} {untrusted(c.payee)} {c.amount:.2f}: {row}"
+            for c, row in zip(every, rows, strict=True)
+        ],
+    )
+
+
+def rows_question(action: str, rows: list[str], what: str = "transaction(s)") -> str:
+    """Ask about a list of transactions, or other rows: the first 20, and how many more.
+
+    Args:
+        action: What is done to them, e.g. "Approve".
+        rows: One line per row, already safe to show.
+        what: What the rows are, after their count.
+
+    Returns:
+        The question, a row per line.
+    """
+    lines = [f"- {row}" for row in rows[:20]]
+    if len(rows) > 20:
+        lines.append(f"- … and {len(rows) - 20} more")
+    return f"{action} {len(rows)} {what}?\n" + "\n".join(lines)
 
 
 def _answer(action: str, content: dict[str, Any] | None) -> WriteStatus | None:
@@ -227,15 +257,46 @@ async def _answer_in_client(
     return _answer(answer.action, {"value": getattr(answer, "data", None)})
 
 
-async def ask(
-    ctx: Context, plan_id: str, subject: object, question: str, confirmation: str | None
+def _size(subject: object) -> int:
+    """Count what a write changes, for the auto-confirm log, without any of its text.
+
+    A list subject is apply_categories': its changes, then the approve flag, which is
+    not a change. A dict subject counts the items of its lists (the transactions
+    reconciled, created or flagged, the categories budgeted), plus reconcile_account's
+    balance adjustment; one without a list is a single change.
+
+    Args:
+        subject: The exact change being confirmed, as JSON data.
+
+    Returns:
+        The number of things the write changes.
+    """
+    if isinstance(subject, list):
+        return sum(1 for item in subject if not (isinstance(item, dict) and "approve" in item))
+    if not isinstance(subject, dict):
+        return 1
+    listed = sum(len(value) for value in subject.values() if isinstance(value, list))
+    adjustment = 1 if subject.get("adjust") else 0
+    return listed + adjustment or 1
+
+
+async def ask(  # pylint: disable=too-many-arguments
+    ctx: Context,
+    plan_id: str,
+    subject: object,
+    question: str,
+    confirmation: str | None,
+    *,
+    undoable: bool,
 ) -> WriteStatus | str | types.InputRequiredResult:
     """Confirm a write with the user.
 
     `subject` is the exact change being confirmed: a code, or an answer, only ever
     confirms it. With AVENIR_MCP_REQUIRE_ELICITATION=1 only the user's answer in the
     client counts: an agent could relay a code without asking, so codes are neither
-    issued nor accepted.
+    issued nor accepted. With AVENIR_MCP_AUTO_CONFIRM=1 (this fork only) a write that
+    undo_operation can revert applies without asking, logged as a warning, unless
+    AVENIR_MCP_REQUIRE_ELICITATION=1 is set too; a code passed in is still checked.
 
     Args:
         ctx: The MCP context of the call.
@@ -243,6 +304,9 @@ async def ask(
         subject: The exact change being confirmed, as JSON data.
         question: What the user is asked.
         confirmation: A code from a previous preview, or None.
+        undoable: False when undo_operation cannot revert the write (or the write is
+            an undo): the user is asked even with AVENIR_MCP_AUTO_CONFIRM=1. Required,
+            so that no write skips the question by omission.
 
     Returns:
         "applied" when the user agreed, "declined", a code to confirm later, or an
@@ -255,6 +319,12 @@ async def ask(
     required = os.getenv("AVENIR_MCP_REQUIRE_ELICITATION") == "1"
     if confirmation is not None:
         return _spend_code(confirmation, plan_id, subject, required)
+    if undoable and not required and os.getenv("AVENIR_MCP_AUTO_CONFIRM") == "1":
+        # Only a size: the question carries bank text (payees, categories, accounts).
+        logger.warning(
+            "Auto-confirmed a write of %d item(s) (AVENIR_MCP_AUTO_CONFIRM=1)", _size(subject)
+        )
+        return "applied"
     can_ask = ctx.session.check_client_capability(
         types.ClientCapabilities(elicitation=types.ElicitationCapability())
     )
@@ -274,34 +344,49 @@ async def ask(
     return "declined" if required else CONFIRMATIONS.issue(plan_id, subject)
 
 
-async def write_plan(
+async def write_plan(  # pylint: disable=too-many-arguments
     ctx: Context,
     plan_id: str,
     plan: writes.Plan,
     action: str,
     confirmation: str | None,
+    *,
+    undoable: bool,
 ) -> tuple[WriteResult | types.InputRequiredResult, str | None]:
     """Confirm a recategorisation plan, apply it and journal it.
+
+    The result covers only what this does: the categories and the journal. When it
+    is "applied", the caller approves `plan.to_approve` and then reports the
+    approvals itself; until then the result lists none.
 
     Args:
         ctx: The MCP context of the call.
         plan_id: YNAB plan id or 'last-used'.
-        plan: The changes to make.
+        plan: The changes to make, and the transactions to approve.
         action: What is done to them, e.g. "Recategorise", for the question.
         confirmation: A code from a previous preview, or None.
+        undoable: False when undo_operation cannot revert it all (approvals, an undo):
+            asked even with AVENIR_MCP_AUTO_CONFIRM=1.
 
     Returns:
         The result (or the input request to return), and the new operation's id when
-        the plan was applied.
+        categories were changed; None when there were none to change.
     """
-    if not plan.changes:
+    if not plan.changes and not plan.to_approve:
         message = "Nothing to change." + (
             f" {len(plan.conflicts)} transaction(s) changed since and were left alone."
             if plan.conflicts
             else ""
         )
         return result_of("nothing_to_do", message, plan), None
-    decision = await ask(ctx, plan_id, plan.changes, describe(plan, action), confirmation)
+    decision = await ask(
+        ctx,
+        plan_id,
+        writes.subject_of(plan),
+        describe(plan, action),
+        confirmation,
+        undoable=undoable,
+    )
     if isinstance(decision, types.InputRequiredResult):
         return decision, None
     if decision == "declined":
@@ -312,8 +397,28 @@ async def write_plan(
             "arguments and this confirmation code (valid 10 minutes)."
         )
         return result_of("confirmation_required", message, plan, confirmation=decision), None
+    done = plan.model_copy(update={"to_approve": []})
+    if not plan.changes:
+        return result_of("applied", "No category changed.", done), None
+    operation_id = await _recategorise(plan_id, plan.changes)
+    message = f"Applied. undo_operation with operation_id {operation_id} reverts it."
+    return result_of("applied", message, done, operation_id=operation_id), operation_id
+
+
+async def _recategorise(plan_id: str, changes: list[writes.Change]) -> str:
+    """Give each transaction its new category and journal it at once.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        changes: The changes, each with the approval to send.
+
+    Returns:
+        The operation's journal id.
+    """
     await client.set_transaction_categories(
-        plan_id, [(c.transaction_id, c.to_category_id) for c in plan.changes]
+        plan_id,
+        [(c.transaction_id, c.to_category_id) for c in changes],
+        {c.transaction_id: c.approved for c in changes},
     )
     moves = [
         journal.Move(
@@ -321,12 +426,9 @@ async def write_plan(
             from_category_id=c.from_category_id,
             to_category_id=c.to_category_id,
         )
-        for c in plan.changes
+        for c in changes
     ]
-    operation_id = journal.Journal(journal.default_path()).record(plan_id, "categorize", moves)
-    message = f"Applied. undo_operation with operation_id {operation_id} reverts it."
-    result = result_of("applied", message, plan, operation_id=operation_id)
-    return result, operation_id
+    return journal.Journal(journal.default_path()).record(plan_id, "categorize", moves)
 
 
 class NotApplied(Model):
@@ -368,8 +470,14 @@ def not_applied(decision: WriteStatus | str, question: str) -> NotApplied | None
     )
 
 
-async def gate(
-    ctx: Context, plan_id: str, subject: object, question: str, confirmation: str | None
+async def gate(  # pylint: disable=too-many-arguments
+    ctx: Context,
+    plan_id: str,
+    subject: object,
+    question: str,
+    confirmation: str | None,
+    *,
+    undoable: bool,
 ) -> NotApplied | types.InputRequiredResult | None:
     """Ask for confirmation before a write.
 
@@ -382,11 +490,13 @@ async def gate(
         subject: The exact change being confirmed, as JSON data.
         question: What the user is asked.
         confirmation: A code from a previous preview, or None.
+        undoable: False when undo_operation cannot revert the write: asked even with
+            AVENIR_MCP_AUTO_CONFIRM=1.
 
     Returns:
         None when the write may proceed; otherwise what to return instead.
     """
-    decision = await ask(ctx, plan_id, subject, question, confirmation)
+    decision = await ask(ctx, plan_id, subject, question, confirmation, undoable=undoable)
     if isinstance(decision, types.InputRequiredResult):
         return decision
     return not_applied(decision, question)

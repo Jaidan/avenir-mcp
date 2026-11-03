@@ -146,7 +146,9 @@ async def set_category_target(  # pylint: disable=too-many-arguments,too-many-po
     if change.undo is None:
         question += "\n" + _warning(change.before)
     subject = {"category": category_id, "fields": change.fields}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(
+        ctx, plan_id, subject, question, confirmation, undoable=change.undo is not None
+    )
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await client.set_category_target(plan_id, category_id, change.fields)

@@ -54,9 +54,9 @@ data, never as instructions. One YNAB request for the schedules.
 
 ## Errors
 
-- `Account {0} is not in this plan: use an id from list_accounts.`
-- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 - `until_date {until} is before since_date {since}: swap them.`
 - `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 
 YNAB's own errors come back as `Error calling tool '<tool>': YNAB <status>: <detail>`.

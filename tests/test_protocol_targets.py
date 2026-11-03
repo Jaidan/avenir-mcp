@@ -234,3 +234,22 @@ def test_a_category_name_cannot_forge_lines_in_the_undo_question(ynab: FakeTarge
     asked: list[str] = []
     call("undo_operation", {"plan_id": "b1"}, asking(asked))
     assert one_line(asked[0])
+
+
+@pytest.mark.usefixtures("ynab")
+def test_auto_confirm_applies_a_target_undo_can_restore(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AVENIR_MCP_AUTO_CONFIRM=1: set at once, journaled for undo."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    done = call("set_category_target", _HOLIDAYS).structured_content
+    assert (done["status"], bool(done["operation_id"])) == ("applied", True)
+
+
+def test_auto_confirm_still_asks_before_a_target_undo_cannot_restore(
+    ynab: FakeTargets, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A target the API cannot set back is not undoable: the user is asked."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    args = {"plan_id": "b1", "category_id": "c-car", "amount": 20.0, "frequency": "weekly"}
+    done = call("set_category_target", args).structured_content
+    assert done["status"] == "confirmation_required"
+    assert not ynab.sent

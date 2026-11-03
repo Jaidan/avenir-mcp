@@ -13,10 +13,10 @@ Tout outil qui appelle YNAB peut renvoyer l'erreur de YNAB : `Error calling tool
 
 ## [`find_transactions`](/avenir-mcp/fr/reference/tools/find-transactions/)
 
-- `Account {0} is not in this plan: use an id from list_accounts.`
-- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 - `until_date {until} is before since_date {since}: swap them.`
 - `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 
 ## [`forecast_balance`](/avenir-mcp/fr/reference/tools/forecast-balance/)
 
@@ -53,17 +53,20 @@ Tout outil qui appelle YNAB peut renvoyer l'erreur de YNAB : `Error calling tool
 
 ## [`list_scheduled_transactions`](/avenir-mcp/fr/reference/tools/list-scheduled-transactions/)
 
-- `Account {0} is not in this plan: use an id from list_accounts.`
-- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 - `until_date {until} is before since_date {since}: swap them.`
 - `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 
 ## [`suggest_categories`](/avenir-mcp/fr/reference/tools/suggest-categories/)
 
+- `until_date {until} is before since_date {since}: swap them.`
+- `This cursor was issued for a different date window: pass the same since_date and until_date as for the first page, or omit the cursor to start again.`
 - `Invalid cursor: pass the next_cursor value from the previous page unchanged, or omit it to start from the first page.`
 
 ## [`apply_categories`](/avenir-mcp/fr/reference/tools/apply-categories/)
 
+- `Approving failed ({error}): {outcome}{categories}.`
 - `Transaction {tx_id} is assigned twice: keep one assignment.`
 - `Transaction {tx_id} is not in this plan: use the transaction_id values returned by suggest_categories.`
 - `Transaction {tx_id} is split across categories: change its lines in YNAB.`
@@ -72,6 +75,18 @@ Tout outil qui appelle YNAB peut renvoyer l'erreur de YNAB : `Error calling tool
 - `Category {category_id} is YNAB's internal Uncategorized: choose a real category.`
 - `Category {category_id} is not in this plan: use a category_id from the categories returned by suggest_categories.`
 - `Category {category_id} pays a credit card: YNAB ignores it on a transaction. Choose the category of what was paid for.`
+- `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
+- `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
+- `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
+- `The plan changed between the preview and the answer. Call again without an answer to get a new preview.`
+
+## [`approve_transactions`](/avenir-mcp/fr/reference/tools/approve-transactions/)
+
+- `Give either tx_ids, to approve those transactions, or since_date (with until_date and exclude_ids if needed), to approve a reviewed period; not both.`
+- `until_date {until} is before since_date {since}: swap them.`
+- `The dates span more than 366 days: search a shorter period.`
+- `Account {0} is not in this plan: use an id from list_accounts.`
+- `Category {0} is not in this plan: use a category_id from get_category_balances.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
 - `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
 - `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
@@ -113,8 +128,8 @@ Tout outil qui appelle YNAB peut renvoyer l'erreur de YNAB : `Error calling tool
 ## [`move_money`](/avenir-mcp/fr/reference/tools/move-money/)
 
 - `Give two different categories: money moves from one to another.`
-- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `month must be 'current' or the first day of a month as YYYY-MM-01, got '{month}'.`
+- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `{refused}; {name} is back to {from_amount}: nothing was moved.`
 - `{refused}, then putting {name} back failed too ({again}): set {name} back to {from_amount} in YNAB.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
@@ -145,8 +160,18 @@ Tout outil qui appelle YNAB peut renvoyer l'erreur de YNAB : `Error calling tool
 
 ## [`set_category_budget`](/avenir-mcp/fr/reference/tools/set-category-budget/)
 
-- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `month must be 'current' or the first day of a month as YYYY-MM-01, got '{month}'.`
+- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
+- `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
+- `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
+- `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`
+- `The plan changed between the preview and the answer. Call again without an answer to get a new preview.`
+
+## [`set_category_budgets`](/avenir-mcp/fr/reference/tools/set-category-budgets/)
+
+- `month must be 'current' or the first day of a month as YYYY-MM-01, got '{month}'.`
+- `Category {category_id} more than once: give each category one amount.`
+- `Category {category_id} is not in this plan: use a category_id from get_category_balances.`
 - `This client cannot ask the user to confirm, and AVENIR_MCP_REQUIRE_ELICITATION=1 forbids confirmation codes: nothing was changed. Use a client that supports MCP elicitation, or unset the variable.`
 - `This confirmation code is unknown, expired, already used, or was issued for different changes. Call again without confirmation to get a new preview.`
 - `Confirmation codes are disabled (AVENIR_MCP_REQUIRE_ELICITATION=1): call again without confirmation, and the user answers in the client.`

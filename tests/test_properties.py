@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import random
 import tempfile
 import unicodedata
@@ -115,11 +116,16 @@ def test_projected_months_follow_on_and_add_up(
 # ---------------------------------------------------------------------------
 
 
-@given(st.integers(min_value=0, max_value=10**12))
-def test_a_cursor_gives_back_its_offset(offset: int) -> None:
-    """A cursor issued for an offset leads back to that offset."""
-    cursor = triage._encode_cursor(offset)  # pylint: disable=protected-access
-    assert triage._decode_cursor(cursor) == offset  # pylint: disable=protected-access
+_WINDOW_DATES = st.none() | st.dates()
+
+
+@given(st.integers(min_value=0, max_value=10**12), _WINDOW_DATES, _WINDOW_DATES)
+def test_a_cursor_gives_back_its_offset_and_window(
+    offset: int, since: date | None, until: date | None
+) -> None:
+    """A cursor issued for an offset and a window leads back to both."""
+    cursor = triage._encode_cursor(offset, since, until)  # pylint: disable=protected-access
+    assert triage._decode_cursor(cursor) == (offset, since, until)  # pylint: disable=protected-access
 
 
 def test_a_cursor_outside_the_url_safe_alphabet_is_refused() -> None:
@@ -128,7 +134,7 @@ def test_a_cursor_outside_the_url_safe_alphabet_is_refused() -> None:
     Python 3.15 warns that such characters will be discarded: a cursor altered by one
     could then decode to another page.
     """
-    valid = triage._encode_cursor(12)  # pylint: disable=protected-access
+    valid = triage._encode_cursor(12, None, None)  # pylint: disable=protected-access
     with pytest.raises(ValueError, match="next_cursor"):
         triage._decode_cursor(valid[:4] + "////" + valid[4:])  # pylint: disable=protected-access
 
@@ -137,7 +143,7 @@ def test_a_cursor_outside_the_url_safe_alphabet_is_refused() -> None:
 def test_any_other_cursor_is_refused_with_a_way_forward(cursor: str) -> None:
     """Whatever an agent passes as a cursor, the answer is an offset or a clear refusal."""
     try:
-        offset = triage._decode_cursor(cursor)  # pylint: disable=protected-access
+        offset, _, _ = triage._decode_cursor(cursor)  # pylint: disable=protected-access
     except ValueError as error:
         assert "next_cursor" in str(error)
     else:
@@ -300,3 +306,11 @@ def test_any_headers_are_refused_without_the_exact_token(
     carries = authorization == f"Bearer {_TOKEN}".encode()
     assert passed == ([True] if carries else [])
     assert carries or sent[0]["status"] == 401
+
+
+@pytest.mark.parametrize("window", ["20260901:", ":2026-W36-1", "2026-9-1:"])
+def test_a_cursor_with_a_non_canonical_date_is_refused(window: str) -> None:
+    """Only YYYY-MM-DD is read, so one window has one cursor."""
+    cursor = base64.urlsafe_b64encode(f"offset:3:{window}".encode()).decode()
+    with pytest.raises(ValueError, match="next_cursor"):
+        triage._decode_cursor(cursor)  # pylint: disable=protected-access

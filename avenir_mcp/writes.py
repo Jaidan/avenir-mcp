@@ -14,7 +14,7 @@ import hashlib
 import json
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -35,8 +35,8 @@ class Assignment(Model):
 
     transaction_id: str
     """Transaction to categorise, from suggest_categories."""
-    category_id: str
-    """Category to give it."""
+    category_id: str | None
+    """Category to give it; null takes its category away (back to uncategorized)."""
 
 
 class Change(Model):
@@ -58,6 +58,10 @@ class Change(Model):
     """Category id after; null for none."""
     to_category: str | None
     """Category name after; null for none."""
+    approved: bool
+    """The approval sent with the change: the transaction's own, or true when the operation
+    approves too.
+    """
 
 
 class Plan(Model):
@@ -69,6 +73,39 @@ class Plan(Model):
     """Assignments that change nothing."""
     conflicts: list[str] = []
     """Ids left alone because they changed since."""
+    to_approve: list[Change] = []
+    """Transactions already in the right category, approved by the same operation."""
+    approve: bool = False
+    """Whether the operation approves the transactions it is given."""
+
+
+def subject_of(plan: Plan) -> list[Any]:
+    """Say what confirming a recategorisation plan binds, for a code or an answer.
+
+    A flat list, so that :func:`fingerprint` ignores the order of the assignments.
+    Rows only approved are bound in full, so a code goes stale when one of them
+    changes; the approve flag is an item of its own, since every change may already
+    be approved.
+
+    Args:
+        plan: The changes, the rows to approve and the approve flag.
+
+    Returns:
+        The items confirmed, as models and JSON data.
+    """
+    return [*plan.changes, *({"approve": c} for c in plan.to_approve), {"approve": plan.approve}]
+
+
+def approvals(transactions: Iterable[dict[str, Any]]) -> dict[str, bool]:
+    """Say whether each transaction is approved, so an update can send the approval it keeps.
+
+    Args:
+        transactions: The plan's transactions.
+
+    Returns:
+        Each transaction's id with its approval; a transaction without one counts as unapproved.
+    """
+    return {tx["id"]: bool(tx.get("approved")) for tx in transactions}
 
 
 def _check_category(
@@ -99,11 +136,85 @@ def _check_category(
         raise ValueError(f"Category {category_id} {CARD_CATEGORY}")
 
 
+def _assignable(
+    tx_id: str,
+    by_id: dict[str, dict[str, Any]],
+    seen: set[str],
+    off_budget: set[str] | frozenset[str],
+) -> dict[str, Any]:
+    """Find a transaction that can take a category, once.
+
+    Args:
+        tx_id: The transaction asked for.
+        by_id: The plan's transactions by id.
+        seen: Ids already assigned; this one is added.
+        off_budget: Ids of the tracking accounts.
+
+    Returns:
+        The transaction.
+
+    Raises:
+        ValueError: If it is assigned twice, unknown, split, on an off-budget account,
+            or a transfer.
+    """
+    if tx_id in seen:
+        raise ValueError(f"Transaction {tx_id} is assigned twice: keep one assignment.")
+    seen.add(tx_id)
+    tx = by_id.get(tx_id)
+    if tx is None:
+        raise ValueError(
+            f"Transaction {tx_id} is not in this plan: "
+            "use the transaction_id values returned by suggest_categories."
+        )
+    if tx.get("subtransactions"):
+        raise ValueError(
+            f"Transaction {tx_id} is split across categories: change its lines in YNAB."
+        )
+    if tx.get("account_id") in off_budget:
+        raise ValueError(
+            f"Transaction {tx_id} is on an off-budget account: YNAB gives it no category."
+        )
+    if tx.get("transfer_account_id"):
+        raise ValueError(
+            f"Transaction {tx_id} is a transfer between accounts: YNAB gives it no category."
+        )
+    return tx
+
+
+def _row(
+    tx: dict[str, Any], category_id: str | None, names: dict[str, str], approved: bool
+) -> Change:
+    """Describe a transaction moving from its category to another.
+
+    Args:
+        tx: The transaction.
+        category_id: The category it is given; None takes its category away.
+        names: The plan's category names by id.
+        approved: The approval to send with it.
+
+    Returns:
+        The change; from and to are the same category when it only gets approved.
+    """
+    current = tx.get("category_id")
+    return Change(
+        transaction_id=tx["id"],
+        date=tx["date"],
+        amount=milliunit_to_amount(tx["amount"]),
+        payee=untrusted(tx.get("payee_name")),
+        from_category_id=current,
+        from_category=untrusted(names[current]) if current in names else None,
+        to_category_id=category_id,
+        to_category=untrusted(names[category_id]) if category_id is not None else None,
+        approved=approved,
+    )
+
+
 def plan_categorization(
     transactions: list[dict[str, Any]],
     categories: list[dict[str, Any]],
     assignments: list[Assignment],
     off_budget: set[str] | frozenset[str] = frozenset(),
+    approve: bool = False,
 ) -> Plan:
     """Work out what assigning these categories would change.
 
@@ -112,9 +223,11 @@ def plan_categorization(
         categories: The plan's categories.
         assignments: The categories to give, one per transaction.
         off_budget: Ids of the tracking accounts.
+        approve: Approve the transactions too: each change is sent approved, and an
+            unapproved transaction already in its category is listed to approve.
 
     Returns:
-        The changes, and how many assignments change nothing.
+        The changes, the transactions to approve, and how many assignments change nothing.
 
     Raises:
         ValueError: With a message saying what to fix, if an assignment names an
@@ -127,48 +240,25 @@ def plan_categorization(
     refused = (internal_uncategorized(categories), card_payments(categories))
     seen: set[str] = set()
     changes: list[Change] = []
+    to_approve: list[Change] = []
     unchanged = 0
     for assignment in assignments:
-        tx_id, category_id = assignment.transaction_id, assignment.category_id
-        if tx_id in seen:
-            raise ValueError(f"Transaction {tx_id} is assigned twice: keep one assignment.")
-        seen.add(tx_id)
-        tx = by_id.get(tx_id)
-        if tx is None:
-            raise ValueError(
-                f"Transaction {tx_id} is not in this plan: "
-                "use the transaction_id values returned by suggest_categories."
-            )
-        _check_category(category_id, names, refused)
-        if tx.get("subtransactions"):
-            raise ValueError(
-                f"Transaction {tx_id} is split across categories: change its lines in YNAB."
-            )
-        if tx.get("account_id") in off_budget:
-            raise ValueError(
-                f"Transaction {tx_id} is on an off-budget account: YNAB gives it no category."
-            )
-        if tx.get("transfer_account_id"):
-            raise ValueError(
-                f"Transaction {tx_id} is a transfer between accounts: YNAB gives it no category."
-            )
-        current = tx.get("category_id")
-        if current == category_id:
-            unchanged += 1
-            continue
-        changes.append(
-            Change(
-                transaction_id=tx_id,
-                date=tx["date"],
-                amount=milliunit_to_amount(tx["amount"]),
-                payee=untrusted(tx.get("payee_name")),
-                from_category_id=current,
-                from_category=untrusted(names.get(current)) or None,
-                to_category_id=category_id,
-                to_category=untrusted(names[category_id]),
-            )
+        tx = _assignable(assignment.transaction_id, by_id, seen, off_budget)
+        if assignment.category_id is not None:
+            _check_category(assignment.category_id, names, refused)
+        change = _row(
+            tx, assignment.category_id, names, approved=approve or bool(tx.get("approved"))
         )
-    return Plan(changes=changes, unchanged_count=unchanged)
+        # YNAB's internal Uncategorized is no category: clearing it changes nothing.
+        if (None if change.from_category_id in refused[0] else change.from_category_id) != (
+            change.to_category_id
+        ):
+            changes.append(change)
+        elif approve and not tx.get("approved"):
+            to_approve.append(change)
+        else:
+            unchanged += 1
+    return Plan(changes=changes, unchanged_count=unchanged, to_approve=to_approve, approve=approve)
 
 
 def plan_undo(
@@ -213,6 +303,7 @@ def plan_undo(
                 from_category=untrusted(names.get(gave)) or None,
                 to_category_id=before,
                 to_category=untrusted(names.get(before)) if before else None,
+                approved=bool(tx.get("approved")),
             )
         )
     return Plan(changes=changes, conflicts=conflicts)

@@ -80,8 +80,19 @@ clasificadas:
 
 <Code code={approved} lang="json" title="approve_transactions" />
 
-`approve_transactions` solo quita esa marca, así que se aplica al momento, sin vista
-previa.
+`approve_transactions` con identificadores solo quita esa marca, así que se aplica al
+momento, sin vista previa. Una vez revisado todo un periodo, puede aprobar por fechas
+(`since_date`, y `until_date` o `exclude_ids` si hace falta): cada transacción del periodo
+que el banco ha confirmado y que tiene categoría, tras una vista previa y su
+confirmación. Ninguno de los dos se puede deshacer.
+
+Para clasificar y aprobar en un solo paso, pase `approve` a `apply_categories`: las
+transacciones que recibe se aprueban también, sin llamar a `approve_transactions`.
+Deshacerlo restaura las categorías pero deja las transacciones aprobadas.
+
+Para revisar un mes ya clasificado, `find_transactions` filtra por estado:
+`approved=false` para lo que espera revisión, `cleared="uncleared"` para lo que el banco
+no ha confirmado, `uncategorized=true` para lo que no tiene categoría.
 
 ## Cómo se hacen las sugerencias
 

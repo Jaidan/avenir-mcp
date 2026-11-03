@@ -118,10 +118,11 @@ def test_the_schema_states_the_range_of_the_limit() -> None:
 
 
 def test_the_description_names_the_write_tools_only_when_they_exist() -> None:
-    """Read-only, it points to YNAB itself; with writes, to move_money and set_category_budget."""
+    """Read-only, it points to YNAB itself; with writes, to the tools that budget categories."""
     read_only = _tools(enable_writes=False)["get_underfunded_targets"].description
     writing = _tools(enable_writes=True)["get_underfunded_targets"].description
     assert "move_money" not in read_only
     assert "in YNAB itself" in read_only
     assert "move_money" in writing
     assert "set_category_budget" in writing
+    assert "set_category_budgets" in writing

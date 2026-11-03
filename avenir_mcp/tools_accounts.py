@@ -5,17 +5,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import calendar
 import logging
 from datetime import date, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
 from mcp.types import InputRequiredResult
 from pydantic import Field
 
-from avenir_mcp import app, client, forecast, journal, reconcile, schedule
+from avenir_mcp import app, client, forecast, journal, reconcile, schedule, writes
 from avenir_mcp.amounts import Amount
 from avenir_mcp.app import WRITE_TAG, mcp
 from avenir_mcp.classifier import normalize_payee
@@ -28,7 +29,12 @@ logger = logging.getLogger(__name__)
 
 
 ReconcileStatus = Literal[
-    "applied", "confirmation_required", "declined", "nothing_to_do", "difference_found"
+    "applied",
+    "confirmation_required",
+    "declined",
+    "nothing_to_do",
+    "difference_found",
+    "totals_disagree",
 ]
 
 
@@ -37,7 +43,8 @@ class ReconcileResult(Model):
 
     status: ReconcileStatus
     """Outcome: difference_found (nothing changed; see analysis), confirmation_required, applied,
-    declined, or nothing_to_do (already reconciled).
+    declined, nothing_to_do (already reconciled), or totals_disagree (nothing changed: the
+    transactions avenir-mcp reads do not add up to YNAB's own cleared balance).
     """
     message: str
     """What happened and what to do next, for the agent to relay."""
@@ -53,6 +60,58 @@ class ReconcileResult(Model):
     """
     operation_id: str | None
     """Journal id of the applied operation, for undo_operation; null unless status is applied."""
+
+
+def _against_ynab(
+    account: dict[str, Any], transactions: list[dict[str, Any]], bank_balance: float
+) -> tuple[reconcile.Analysis, bool]:
+    """Analyse an account against the bank, beside the cleared balance YNAB shows for it.
+
+    Args:
+        account: The account, as client.get_accounts returns it.
+        transactions: The plan's transactions, amounts in milliunits.
+        bank_balance: Balance shown by the bank, in currency units.
+
+    Returns:
+        The analysis, and whether the transactions add up to YNAB's cleared balance,
+        compared in milliunits.
+    """
+    ynab_cleared = client.amount_to_milliunit(account["cleared_balance"])
+    analysis = reconcile.analyse(
+        account["id"], transactions, bank_balance, ynab_cleared=ynab_cleared
+    )
+    return analysis, client.amount_to_milliunit(analysis.cleared_balance) == ynab_cleared
+
+
+async def _analyse(
+    plan_id: str, account: dict[str, Any], bank_balance: float
+) -> tuple[list[dict[str, Any]], reconcile.Analysis, bool]:
+    """Analyse an account against the bank, from transactions that add up to YNAB's total.
+
+    The transactions come from the delta-sync cache. When their cleared sum differs
+    from the cleared balance YNAB shows for the account, the cache may be out of date,
+    or the account may have changed since it was read: both are read again together,
+    the transactions in full, and compared once more.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        account: The account, as client.get_accounts returns it.
+        bank_balance: Balance shown by the bank, in currency units.
+
+    Returns:
+        The plan's transactions, the analysis, and whether the two cleared totals agree.
+    """
+    transactions = await client.get_transactions(plan_id)
+    analysis, agree = _against_ynab(account, transactions, bank_balance)
+    if not agree:
+        logger.warning("Cleared total differs from YNAB's: reading the account again in full")
+        accounts, transactions = await asyncio.gather(
+            client.get_accounts(plan_id), client.get_transactions(plan_id, fresh=True)
+        )
+        # The account read first stands in if it has vanished since.
+        account = {a["id"]: a for a in accounts}.get(account["id"], account)
+        analysis, agree = _against_ynab(account, transactions, bank_balance)
+    return transactions, analysis, agree
 
 
 # YNAB's own group, which holds the single "Inflow: Ready to Assign" category.
@@ -87,7 +146,11 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
     call again. Only if the user wants to accept the remaining gap, call with
     adjust=true: a "Balance adjustment" transaction is added to Ready to Assign.
     When balances match, every cleared transaction is marked reconciled after the
-    user confirms (as for apply_categories). undo_operation reverts it.
+    user confirms (as for apply_categories). undo_operation reverts it. If the
+    account's transactions do not add up to the cleared balance YNAB shows, even
+    after reading both again, nothing is asked or written (totals_disagree): call
+    again in a minute, or ask the user to look in YNAB for an import matched to, or
+    recently deleted from, the account.
 
     Args:
         plan_id: YNAB plan id or 'last-used'.
@@ -105,21 +168,33 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
         ToolError: If the account is not in the plan, or the confirmation code is refused.
     """
     logger.info("Tool called: reconcile_account(adjust=%s)", adjust)
-    accounts = {a["id"]: a["name"] for a in await client.get_accounts(plan_id)}
+    accounts = {a["id"]: a for a in await client.get_accounts(plan_id)}
     if account_id not in accounts:
         raise ToolError(f"Account {account_id} is not in this plan: use an id from list_accounts.")
-    transactions = await client.get_transactions(plan_id)
-    analysis = reconcile.analyse(account_id, transactions, bank_balance)
+    transactions, analysis, agree = await _analyse(plan_id, accounts[account_id], bank_balance)
     difference = analysis.difference
     result = ReconcileResult(
         status="nothing_to_do",
         message="Already reconciled: nothing to do.",
-        account=untrusted(accounts[account_id]),
+        account=untrusted(accounts[account_id]["name"]),
         analysis=analysis,
         adjustment=None,
         confirmation=None,
         operation_id=None,
     )
+    if not agree:
+        return result.model_copy(
+            update={
+                "status": "totals_disagree",
+                "message": (
+                    f"The account's cleared transactions add up to {analysis.cleared_balance:.2f}, "
+                    f"but YNAB shows a cleared balance of {analysis.ynab_cleared_balance:.2f}, "
+                    "even after reading both again. Nothing was changed. YNAB may still be "
+                    "processing a change (call again in a minute); otherwise ask the user to look "
+                    "in YNAB for a bank import matched to, or recently deleted from, this account."
+                ),
+            }
+        )
     if difference and not adjust:
         return result.model_copy(
             update={
@@ -154,9 +229,10 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
         "adjust": difference,
         "transactions": to_reconcile,
     }
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
+    keeps = writes.approvals(transactions)
     adjustment_id = None
     if difference:
         inflow = next(
@@ -182,7 +258,8 @@ async def reconcile_account(  # pylint: disable=too-many-arguments,too-many-loca
         )
         adjustment_id = created["transaction_ids"][0]
         to_reconcile.append(adjustment_id)
-    await client.set_transactions_cleared(plan_id, to_reconcile, "reconciled")
+        keeps[adjustment_id] = True
+    await client.set_transactions_cleared(plan_id, to_reconcile, "reconciled", keeps)
     operation_id = journal.Journal(journal.default_path()).record(
         plan_id,
         "reconcile",
@@ -564,7 +641,7 @@ async def create_transactions(  # pylint: disable=too-many-arguments,too-many-po
     ]
     question = f"Create {len(preview)} transaction(s) on {result.account}?\n" + "\n".join(lines)
     subject = {"account": account_id, "items": transactions, "approved": approved}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     created = await client.create_transactions(

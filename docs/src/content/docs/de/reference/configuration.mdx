@@ -19,6 +19,7 @@ keine Konfigurationsdatei.
 | `YNAB_API_KEY_FILE` | nicht gesetzt | Eine Datei mit dem Token, verwendet, wenn `YNAB_API_KEY` nicht gesetzt ist. |
 | `AVENIR_MCP_WRITE` | nicht gesetzt: nur lesend | `1` registriert die Tools, die Ihren Plan ändern. |
 | `AVENIR_MCP_REQUIRE_ELICITATION` | nicht gesetzt | `1` akzeptiert nur ein im Client gegebenes Ja: keine Bestätigungscodes. |
+| `AVENIR_MCP_AUTO_CONFIRM` | nicht gesetzt | `1` (nur dieser Fork) wendet Schreibaktionen, die `undo_operation` rückgängig machen kann, ohne Nachfrage an. |
 | `AVENIR_MCP_TRANSPORT` | `stdio` | `stdio` oder `http`. |
 | `AVENIR_MCP_HOST` | `127.0.0.1` | HTTP-Adresse. |
 | `AVENIR_MCP_PORT` | `8103` | HTTP-Port. |
@@ -70,7 +71,7 @@ macOS fragt vielleicht einmal, ob `security` den Eintrag lesen darf.
 
 ### `AVENIR_MCP_WRITE`
 
-Genau `1` registriert die 14 schreibenden Tools. Jeder andere Wert oder keiner lässt
+Genau `1` registriert die 15 schreibenden Tools. Jeder andere Wert oder keiner lässt
 den Server nur lesend: Diese Tools sind dann weder aufgelistet noch aufrufbar. Wird
 einmal beim Start gelesen.
 
@@ -82,6 +83,19 @@ akzeptiert, eine weggeklickte Frage zählt als Nein, und ein Client, der nicht f
 erhält einen Fehler. Nutzen Sie es, wenn das Modell einen Code weitergeben könnte, ohne Sie
 zu fragen – siehe
 [Bestätigung](/avenir-mcp/de/concepts/confirmation/#die-eigene-antwort-des-nutzers-verlangen).
+
+### `AVENIR_MCP_AUTO_CONFIRM`
+
+Genau `1`, nur in diesem Fork: Eine Schreibaktion, die `undo_operation` rückgängig machen
+kann, wird sofort angewendet, ohne Bestätigungsfeld und ohne Code, und der Server
+protokolliert sie als Warnung. Schreibaktionen, die sich nicht rückgängig machen lassen,
+fragen weiterhin: `split_transaction`, `create_category`, `update_category`, das Freigeben
+nach Datum, `apply_categories` mit `approve`, ein Ziel, das YNAB nicht wiederherstellen
+kann, und jedes Rückgängigmachen. So gleicht `reconcile_account` beim ersten Aufruf ab,
+wenn die Salden übereinstimmen, und legt mit `adjust` die Transaktion **Balance adjustment** sofort an.
+`approve_transactions` mit IDs fragt nie, mit oder ohne diese Einstellung. Ein übergebener
+Bestätigungscode wird weiterhin geprüft.
+Nicht kombinierbar mit `AVENIR_MCP_REQUIRE_ELICITATION=1`: Der Server startet dann nicht.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`
 

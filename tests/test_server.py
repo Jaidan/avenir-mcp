@@ -10,14 +10,14 @@ from datetime import date
 from pathlib import Path
 from types import ModuleType
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastmcp import Client
+from fastmcp import Client, Context
 from fastmcp.exceptions import ToolError
 
 import avenir_mcp
-from avenir_mcp import server, tools_budget, updates
+from avenir_mcp import context, server, tools_budget, updates
 
 # ---------------------------------------------------------------------------
 # FastMCP instance
@@ -52,6 +52,7 @@ def test_catalog_is_exactly_the_published_tools() -> None:
             "update_category",
             "create_category",
             "set_category_budget",
+            "set_category_budgets",
             "move_money",
             "create_transactions",
             "approve_transactions",
@@ -274,8 +275,11 @@ def test_approve_transactions_delegates_to_client() -> None:
     with patch(
         "avenir_mcp.client.approve_transactions", new=AsyncMock(return_value={"approved": 1})
     ) as mock_fn:
-        result = asyncio.run(tools_budget.approve_transactions("b1", ["t1"]))
+        result = asyncio.run(
+            tools_budget.approve_transactions("b1", MagicMock(spec=Context), ["t1"])
+        )
     mock_fn.assert_called_once_with("b1", ["t1"])
+    assert isinstance(result, tools_budget.Approval)
     assert result.approved == 1
     assert "approve_transactions" in [t.name for t in asyncio.run(server.mcp.list_tools())]
 
@@ -291,6 +295,34 @@ def test_main_runs_stdio_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     with patch.object(server.mcp, "run") as run:
         server.main()
     run.assert_called_once_with(transport="stdio")
+
+
+def test_auto_confirm_with_required_elicitation_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Applying without asking and only ever asking in the client contradict each other."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    monkeypatch.setenv("AVENIR_MCP_REQUIRE_ELICITATION", "1")
+    with patch.object(server.mcp, "run") as run, pytest.raises(SystemExit, match="contradict"):
+        server.main()
+    run.assert_not_called()
+
+
+def test_auto_confirm_is_announced_at_startup(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The operator sees in the logs that undoable writes apply without asking."""
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    monkeypatch.delenv("AVENIR_MCP_REQUIRE_ELICITATION", raising=False)
+    monkeypatch.delenv("AVENIR_MCP_TRANSPORT", raising=False)
+    guide = server.mcp.instructions
+    try:
+        with patch.object(server.mcp, "run"), patch("avenir_mcp.logs.configure"):
+            server.main()
+        assert any("AVENIR_MCP_AUTO_CONFIRM=1" in r.getMessage() for r in caplog.records)
+        assert server.mcp.instructions == context.guide_text(auto_confirm=True)
+    finally:
+        server.mcp.instructions = guide
 
 
 def test_main_runs_http_on_localhost_by_default(monkeypatch: pytest.MonkeyPatch) -> None:

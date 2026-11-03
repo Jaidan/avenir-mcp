@@ -13,10 +13,10 @@ from fastmcp.exceptions import ToolError
 from mcp.types import InputRequiredResult
 from pydantic import Field
 
-from avenir_mcp import app, client, journal
+from avenir_mcp import app, client, journal, retry
 from avenir_mcp.amounts import Amount
 from avenir_mcp.app import WRITE_TAG, check_month, mcp
-from avenir_mcp.confirm import WriteStatus, gate, merged
+from avenir_mcp.confirm import WriteStatus, gate, merged, rows_question
 from avenir_mcp.model import Model
 from avenir_mcp.text import one_line, untrusted
 
@@ -140,7 +140,7 @@ async def update_category(  # pylint: disable=too-many-arguments
         f"Change category '{result.from_name}' ({result.from_group}) "
         f"to '{result.to_name}' ({result.to_group})?"
     )
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=False)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await client.update_category(
@@ -205,7 +205,8 @@ async def set_category_budget(  # pylint: disable=too-many-arguments,too-many-po
     """Set the amount budgeted ("Assigned") in a category for a month, after the user confirms.
 
     The amount is absolute, in currency units, not a change. The result gives the
-    amount before and after; undo_operation restores the previous one.
+    amount before and after; undo_operation restores the previous one. For more than
+    one category, use set_category_budgets: one confirmation for all of them.
     Confirmation works as for apply_categories.
 
     Args:
@@ -228,12 +229,7 @@ async def set_category_budget(  # pylint: disable=too-many-arguments,too-many-po
     check_month(month)
     month = app.resolve_month(month)
     categories = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
-    category = categories.get(category_id)
-    if category is None:
-        raise ToolError(
-            f"Category {category_id} is not in this plan: "
-            "use a category_id from get_category_balances."
-        )
+    category = _category(categories, category_id)
     before, after = category["budgeted"], client.amount_to_milliunit(amount)
     result = BudgetChange(
         status="nothing_to_do",
@@ -252,7 +248,7 @@ async def set_category_budget(  # pylint: disable=too-many-arguments,too-many-po
         f"Budget {result.category} for {month}: {result.from_amount:.2f} → {result.to_amount:.2f}?"
     )
     subject = {"category": category_id, "month": month, "amount": after}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await client.set_category_budgeted(plan_id, month, category_id, amount)
@@ -262,6 +258,282 @@ async def set_category_budget(  # pylint: disable=too-many-arguments,too-many-po
         [],
         {"month": month, "category_id": category_id, "from": before, "to": after},
     )
+    return result.model_copy(
+        update={
+            "status": "applied",
+            "message": f"Applied. undo_operation with operation_id {operation_id} reverts it.",
+            "operation_id": operation_id,
+        }
+    )
+
+
+class BudgetItem(Model):
+    """A category's new budgeted amount."""
+
+    category_id: str
+    """Category (from get_category_balances)."""
+    amount: Amount
+    """New budgeted amount, in currency units: absolute, not a change."""
+
+
+class BudgetLine(Model):
+    """One category of set_category_budgets: its amount budgeted before and after."""
+
+    category_id: str
+    """The category."""
+    category: str
+    """Category name."""
+    from_amount: float
+    """Amount budgeted before."""
+    to_amount: float
+    """Amount budgeted after."""
+
+
+class BudgetChanges(Model):
+    """The outcome of set_category_budgets."""
+
+    status: WriteStatus
+    """Outcome: applied, confirmation_required (nothing changed yet; pass the code back once the
+    user agrees), declined (the user said no), or nothing_to_do.
+    """
+    message: str
+    """What happened and what to do next, for the agent to relay."""
+    month: str
+    """Month changed, YYYY-MM-01 ('current' is resolved)."""
+    changes: list[BudgetLine]
+    """The categories whose amount changes, in the order given."""
+    unchanged_count: int
+    """Categories given that already had their amount: left out of changes."""
+    confirmation: str | None
+    """Single-use code confirming exactly this preview, valid 10 minutes; null unless status is
+    confirmation_required.
+    """
+    operation_id: str | None
+    """Journal id of the applied operation, for undo_operation; null unless status is applied."""
+
+
+def _category(categories: dict[str, dict[str, Any]], category_id: str) -> dict[str, Any]:
+    """Find a category of the month, or say where to find a valid id.
+
+    Args:
+        categories: The month's categories by id, as YNAB returns them.
+        category_id: The category the agent gave.
+
+    Returns:
+        The category, as YNAB returns it.
+
+    Raises:
+        ToolError: If it is not in the plan.
+    """
+    category = categories.get(category_id)
+    if category is None:
+        raise ToolError(
+            f"Category {category_id} is not in this plan: "
+            "use a category_id from get_category_balances."
+        )
+    return category
+
+
+def _budget_lines(
+    categories: dict[str, dict[str, Any]], budgets: list[BudgetItem]
+) -> tuple[list[BudgetLine], list[dict[str, Any]]]:
+    """Check the categories given and keep those whose amount changes.
+
+    Args:
+        categories: The month's categories by id, as YNAB returns them.
+        budgets: The new amounts, in the order given.
+
+    Returns:
+        A line per category whose amount changes, in the order given, and the same
+        changes in milliunits as the journal keeps them.
+
+    Raises:
+        ToolError: If a category is given twice or is not in the plan.
+    """
+    seen: set[str] = set()
+    lines = []
+    changes = []
+    for item in budgets:
+        if item.category_id in seen:
+            raise ToolError(
+                f"Category {item.category_id} more than once: give each category one amount."
+            )
+        seen.add(item.category_id)
+        category = _category(categories, item.category_id)
+        before, after = category["budgeted"], client.amount_to_milliunit(item.amount)
+        if before != after:
+            lines.append(
+                BudgetLine(
+                    category_id=item.category_id,
+                    category=untrusted(category["name"]),
+                    from_amount=client.milliunit_to_amount(before),
+                    to_amount=client.milliunit_to_amount(after),
+                )
+            )
+            changes.append({"category_id": item.category_id, "from": before, "to": after})
+    return lines, changes
+
+
+def _journal_budgets(plan_id: str, month: str, applied: list[dict[str, Any]]) -> str:
+    """Record the categories set as one operation, for undo_operation.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        month: The month, YYYY-MM-01.
+        applied: The changes YNAB accepted, in milliunits.
+
+    Returns:
+        The journal id of the operation.
+    """
+    return journal.Journal(journal.default_path()).record(
+        plan_id, "budgets", [], {"month": month, "changes": applied}
+    )
+
+
+def _stopped(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    plan_id: str,
+    month: str,
+    lines: list[BudgetLine],
+    changes: list[dict[str, Any]],
+    failed: int,
+    error: Exception,
+) -> str:
+    """Journal what was applied before a failed write, and say what was and was not.
+
+    A write YNAB refused was not applied; one it never answered may have been, and
+    the user is told to check it.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        month: The month, YYYY-MM-01.
+        lines: Every change, in the order written.
+        changes: The same changes, in milliunits.
+        failed: Index of the change YNAB refused or never answered.
+        error: What YNAB answered.
+
+    Returns:
+        The error message, naming what was applied, what was not, and the operation_id
+        that undoes the applied part.
+    """
+    category = lines[failed].category
+    if isinstance(error, retry.YnabUnavailable):
+        parts = [f"{category} may have been applied: check it in YNAB ({error})."]
+        left = lines[failed + 1 :]
+        nothing = "Nothing else was changed."
+    else:
+        parts = [f"YNAB refused to change {category} ({error})."]
+        left = lines[failed:]
+        nothing = "Nothing was changed."
+    if failed:
+        operation_id = _journal_budgets(plan_id, month, changes[:failed])
+        parts.append(f"Applied: {', '.join(line.category for line in lines[:failed])}.")
+    else:
+        parts.append(nothing)
+    if left:
+        parts.append(f"Not applied: {', '.join(line.category for line in left)}.")
+    if failed:
+        parts.append(f"undo_operation with operation_id {operation_id} reverts the applied part.")
+    return " ".join(parts)
+
+
+async def _set_each(
+    plan_id: str, month: str, lines: list[BudgetLine], changes: list[dict[str, Any]]
+) -> str:
+    """Set each category in turn, then journal them as one operation.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        month: The month, YYYY-MM-01.
+        lines: The changes, in the order to write them.
+        changes: The same changes, in milliunits, for the journal.
+
+    Returns:
+        The journal id of the operation.
+
+    Raises:
+        ToolError: If YNAB refused a write or answered nothing: the categories before it
+            stay applied and journaled, the error names them and the operation_id.
+    """
+    for index, line in enumerate(lines):
+        try:
+            await client.set_category_budgeted(plan_id, month, line.category_id, line.to_amount)
+        except RuntimeError as error:
+            raise ToolError(_stopped(plan_id, month, lines, changes, index, error)) from error
+    return _journal_budgets(plan_id, month, changes)
+
+
+@mcp.tool(
+    tags={WRITE_TAG},
+    annotations={
+        "title": "Set several categories' budgeted amounts",
+        "read_only_hint": False,
+        "destructive_hint": True,
+        "idempotent_hint": True,
+        "open_world_hint": True,
+    },
+)
+async def set_category_budgets(
+    plan_id: str,
+    month: str,
+    budgets: Annotated[list[BudgetItem], Field(min_length=1, max_length=100)],
+    ctx: Context,
+    confirmation: str | None = None,
+) -> BudgetChanges | InputRequiredResult:
+    """Set the amounts budgeted ("Assigned") in several categories for a month, confirmed once.
+
+    The way to fund a month: one preview, one confirmation and one undo_operation
+    for every category, where set_category_budget would take one each. Amounts are
+    absolute, in currency units, not changes. The preview lists each change before
+    and after; a category already at its amount is only counted (unchanged_count).
+    Categories are written one at a time, in the order given; if YNAB refuses one,
+    the rest are not written and the error names what was applied and the
+    operation_id that undoes it. Confirmation works as for apply_categories.
+
+    Args:
+        plan_id: YNAB plan id or 'last-used'.
+        month: 'YYYY-MM-01' or 'current'.
+        budgets: 1 to 100 categories (from get_category_balances), each once, with its new
+            amount in currency units.
+        ctx: The MCP context, used to ask the user.
+        confirmation: Code from a previous "confirmation_required" result.
+
+    Returns:
+        Each change before and after, or an input request the client answers by asking the user
+        (protocol 2026-07-28).
+
+    Raises:
+        ToolError: If the month is malformed, a category is not in the plan or given twice,
+            YNAB refuses a change, or the confirmation code is refused.
+    """
+    logger.info("Tool called: set_category_budgets(month=%r, count=%d)", month, len(budgets))
+    check_month(month)
+    month = app.resolve_month(month)
+    categories = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
+    lines, changes = _budget_lines(categories, budgets)
+    result = BudgetChanges(
+        status="nothing_to_do",
+        message="Nothing to change.",
+        month=month,
+        changes=lines,
+        unchanged_count=len(budgets) - len(lines),
+        confirmation=None,
+        operation_id=None,
+    )
+    if not lines:
+        return result
+    question = rows_question(
+        "Budget",
+        [f"{line.category}: {line.from_amount:.2f} → {line.to_amount:.2f}" for line in lines],
+        f"categories for {month}",
+    )
+    subject = {
+        "month": month,
+        "budgets": sorted((change["category_id"], change["to"]) for change in changes),
+    }
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
+    if stop is not None:
+        return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
+    operation_id = await _set_each(plan_id, month, lines, changes)
     return result.model_copy(
         update={
             "status": "applied",
@@ -418,11 +690,7 @@ async def move_money(  # pylint: disable=too-many-arguments,too-many-positional-
         raise ToolError("Give two different categories: money moves from one to another.")
     categories = {c["id"]: c for c in await client.get_month_categories(plan_id, month)}
     for category_id in (from_category_id, to_category_id):
-        if category_id not in categories:
-            raise ToolError(
-                f"Category {category_id} is not in this plan: "
-                "use a category_id from get_category_balances."
-            )
+        _category(categories, category_id)
     moved = client.amount_to_milliunit(amount)
     source = _side(categories[from_category_id], -moved)
     target = _side(categories[to_category_id], moved)
@@ -442,7 +710,7 @@ async def move_money(  # pylint: disable=too-many-arguments,too-many-positional-
         f"- {target.name}: {target.from_amount:.2f} → {target.to_amount:.2f}"
     )
     subject = {"from": from_category_id, "to": to_category_id, "month": month, "amount": moved}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=True)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     await _set_both(plan_id, month, source, target)
@@ -556,7 +824,7 @@ async def create_category(
     )
     question = f"Create category '{result.name}' in {result.group}?"
     subject = {"group": category_group_id, "name": new_name}
-    stop = await gate(ctx, plan_id, subject, question, confirmation)
+    stop = await gate(ctx, plan_id, subject, question, confirmation, undoable=False)
     if stop is not None:
         return stop if isinstance(stop, InputRequiredResult) else merged(result, stop)
     created = await client.create_category(plan_id, category_group_id, new_name)

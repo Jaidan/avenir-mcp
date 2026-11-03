@@ -11,7 +11,7 @@ sidebar:
 |---|---|---|
 | Bevestigingscodes | worden in het geheugen bewaard: bij een herstart van de server gaan ze verloren | vraag opnieuw om een voorbeeld |
 | Ongedaan maken | geldt alleen voor de computer waarop de bewerking in het journaal is vastgelegd; het ongedaan maken zelf kan niet ongedaan worden gemaakt | voer de wijziging opnieuw uit |
-|  `approve_transactions`| wordt onmiddellijk toegepast, zonder voorbeeld | hiermee wordt alleen de controlevlag van YNAB gewist |
+| `approve_transactions` met ids | wordt meteen toegepast, zonder voorbeeld; niet ongedaan te maken | het haalt alleen de controlemarkering van YNAB weg; goedkeuren op datum krijgt eerst een voorbeeld |
 |  `import_transactions`| wordt onmiddellijk toegepast, zonder voorbeeldweergave; kan hier niet ongedaan worden gemaakt | het haalt alleen de gegevens op die de bank al heeft; verwijder een transactie in YNAB om deze terug te draaien |
 | `update_category`,  `create_category`| kan niet ongedaan worden gemaakt; de API van YNAB kan geen categorie verwijderen | hernoem de categorie terug; verberg de categorie in YNAB |
 | `rename_payee` | hernoemt één begunstigde per keer; de API van YNAB kan er geen twee samenvoegen, dus een naam die een andere begunstigde al heeft wordt geweigerd | hernoem ook de andere labels van de winkel, of voeg de begunstigden samen in YNAB |

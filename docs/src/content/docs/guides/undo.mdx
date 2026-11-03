@@ -40,6 +40,7 @@ operation's answer carries its `operation_id`.
 |---|---|---|
 | `apply_categories` | each transaction's previous category | its category changed again since |
 | `set_category_budget` | the previous amount | the amount changed again since |
+| `set_category_budgets` | each category's previous amount | its amount changed again since (the others are still restored) |
 | `move_money` | both previous amounts | either amount changed again since (then neither is touched) |
 | `flag_transactions` | each transaction's previous flag | its flag changed again since |
 | `rename_payee` | the payee's previous name | it was renamed again since |
@@ -51,7 +52,8 @@ Anything left alone is listed in `conflicts`: undo never overwrites later work.
 
 **Not undoable:** `update_category` (call it again with the previous name and group),
 `create_category` (hide the category in YNAB), `split_transaction` (YNAB's API cannot change a split: edit it in YNAB), `approve_transactions` (approval is a
-review flag).
+review flag). Undoing `apply_categories` called with `approve` restores the categories but
+leaves the transactions approved.
 
 <Aside type="note">
 An undo cannot itself be undone, and undo works on the machine whose

@@ -681,17 +681,21 @@ def test_approve_transactions_empty_list_makes_no_call() -> None:
 def test_set_transaction_categories_bulk_patches_category_ids() -> None:
     """All category changes go in one PATCH; None clears a category."""
     payload = {"data": {"transaction_ids": ["t1", "t2"], "transactions": []}}
+    keeps = {"t1": True, "t2": False}
     ctx = _async_client_returning(payload)
     with patch("httpx.AsyncClient", return_value=ctx):
         with patch.dict("os.environ", {"YNAB_API_KEY": "tok"}):
             result = asyncio.run(
-                client.set_transaction_categories("b1", [("t1", "c1"), ("t2", None)])
+                client.set_transaction_categories("b1", [("t1", "c1"), ("t2", None)], keeps)
             )
     http = ctx.__aenter__.return_value
     assert result == ["t1", "t2"]
     assert http.patch.call_args.args[0].endswith("/plans/b1/transactions")
     assert http.patch.call_args.kwargs["json"] == {
-        "transactions": [{"id": "t1", "category_id": "c1"}, {"id": "t2", "category_id": None}]
+        "transactions": [
+            {"id": "t1", "category_id": "c1", "approved": True},
+            {"id": "t2", "category_id": None, "approved": False},
+        ]
     }
 
 
@@ -705,7 +709,7 @@ def test_split_transaction_sends_lines_in_milliunits_and_clears_the_category() -
     ]
     with patch("httpx.AsyncClient", return_value=ctx):
         with patch.dict("os.environ", {"YNAB_API_KEY": "tok"}):
-            asyncio.run(client.split_transaction("b1", "t1", lines))
+            asyncio.run(client.split_transaction("b1", "t1", lines, approved=True))
     http = ctx.__aenter__.return_value
     assert http.patch.call_args.args[0].endswith("/plans/b1/transactions")
     assert http.patch.call_args.kwargs["json"] == {
@@ -713,6 +717,7 @@ def test_split_transaction_sends_lines_in_milliunits_and_clears_the_category() -
             {
                 "id": "t1",
                 "category_id": None,
+                "approved": True,
                 "subtransactions": [
                     {"amount": -81150, "category_id": "c1"},
                     {"amount": -5250, "category_id": "c2", "memo": "Soap"},
@@ -725,7 +730,7 @@ def test_split_transaction_sends_lines_in_milliunits_and_clears_the_category() -
 def test_set_transaction_categories_empty_list_makes_no_call() -> None:
     """Nothing to change must not hit the API."""
     with patch("httpx.AsyncClient") as mock_client:
-        result = asyncio.run(client.set_transaction_categories("b1", []))
+        result = asyncio.run(client.set_transaction_categories("b1", [], {}))
     mock_client.assert_not_called()
     assert result == []
 
@@ -766,15 +771,18 @@ def test_update_category_move_only_sends_the_group() -> None:
 def test_set_transactions_cleared_bulk_patches_the_status() -> None:
     """Reconciling many transactions is one PATCH."""
     payload = {"data": {"transaction_ids": ["t1", "t2"], "transactions": []}}
+    keeps = {"t1": True, "t2": False}
     ctx = _async_client_returning(payload)
     with patch("httpx.AsyncClient", return_value=ctx):
         with patch.dict("os.environ", {"YNAB_API_KEY": "tok"}):
-            result = asyncio.run(client.set_transactions_cleared("b1", ["t1", "t2"], "reconciled"))
+            result = asyncio.run(
+                client.set_transactions_cleared("b1", ["t1", "t2"], "reconciled", keeps)
+            )
     assert result == ["t1", "t2"]
     assert ctx.__aenter__.return_value.patch.call_args.kwargs["json"] == {
         "transactions": [
-            {"id": "t1", "cleared": "reconciled"},
-            {"id": "t2", "cleared": "reconciled"},
+            {"id": "t1", "cleared": "reconciled", "approved": True},
+            {"id": "t2", "cleared": "reconciled", "approved": False},
         ]
     }
 
@@ -782,7 +790,7 @@ def test_set_transactions_cleared_bulk_patches_the_status() -> None:
 def test_set_transactions_cleared_empty_list_makes_no_call() -> None:
     """Nothing to mark must not hit the API."""
     with patch("httpx.AsyncClient") as mock_client:
-        assert asyncio.run(client.set_transactions_cleared("b1", [], "reconciled")) == []
+        assert asyncio.run(client.set_transactions_cleared("b1", [], "reconciled", {})) == []
     mock_client.assert_not_called()
 
 
@@ -964,11 +972,16 @@ def test_set_flags_sends_one_bulk_patch_and_null_removes_a_flag() -> None:
     ctx = _async_client_returning({"data": {"transaction_ids": ["t1", "t2"]}})
     with patch("httpx.AsyncClient", return_value=ctx):
         with patch.dict("os.environ", {"YNAB_API_KEY": "tok"}):
-            ids = asyncio.run(client.set_flags("b1", [("t1", "red"), ("t2", None)]))
-            nothing = asyncio.run(client.set_flags("b1", []))
+            ids = asyncio.run(
+                client.set_flags("b1", [("t1", "red"), ("t2", None)], {"t1": True, "t2": False})
+            )
+            nothing = asyncio.run(client.set_flags("b1", [], {}))
     sent = ctx.__aenter__.return_value.patch.call_args.kwargs["json"]
     assert sent == {
-        "transactions": [{"id": "t1", "flag_color": "red"}, {"id": "t2", "flag_color": None}]
+        "transactions": [
+            {"id": "t1", "flag_color": "red", "approved": True},
+            {"id": "t2", "flag_color": None, "approved": False},
+        ]
     }
     assert ids == ["t1", "t2"]
     assert nothing == []

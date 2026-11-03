@@ -130,3 +130,23 @@ def test_duplicates_may_be_up_to_three_days_apart() -> None:
     ]
     result = reconcile.analyse("acc", txs, 0.0, today=date(2026, 9, 10))
     assert result.possible_duplicates == [["a1", "a2"]]
+
+
+def test_without_the_balance_ynab_shows_there_is_no_cross_check() -> None:
+    """Called without YNAB's own cleared balance, the analysis leaves it null."""
+    assert reconcile.analyse("acc", [_tx("t1", 100000)], 100.0).ynab_cleared_balance is None
+
+
+def test_the_balance_ynab_shows_is_reported_beside_the_sum() -> None:
+    """YNAB's cleared balance, in milliunits, comes back in currency units beside the sum."""
+    txs = [_tx("t1", 100000, "reconciled"), _tx("t2", -30000), _tx("t3", -5000, "uncleared")]
+    result = reconcile.analyse("acc", txs, 70.0, ynab_cleared=70000)
+    assert (result.cleared_balance, result.ynab_cleared_balance) == (70.0, 70.0)
+
+
+def test_a_transaction_ynab_no_longer_counts_makes_the_totals_differ() -> None:
+    """A stale transaction the sum counts and YNAB does not: the two totals differ."""
+    txs = [_tx("t1", 100000), _tx("stale", -41317)]
+    result = reconcile.analyse("acc", txs, 100.0, ynab_cleared=100000)
+    assert result.cleared_balance == 58.683
+    assert result.ynab_cleared_balance == 100.0

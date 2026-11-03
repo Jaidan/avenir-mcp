@@ -11,7 +11,7 @@ sidebar:
 |---|---|---|
 | Bestätigungscodes | im Speicher gehalten: Ein Neustart des Servers vergisst sie | erneut nach einer neuen Vorschau fragen |
 | Rückgängig | auf den Rechner beschränkt, dessen Journal die Operation erfasst hat; ein Rückgängigmachen lässt sich nicht rückgängig machen | die Änderung erneut vornehmen |
-| `approve_transactions` | wird sofort angewendet, ohne Vorschau | es entfernt nur das Prüfkennzeichen von YNAB |
+| `approve_transactions` mit IDs | wird sofort angewendet, ohne Vorschau; nicht rückgängig zu machen | es entfernt nur das Prüfkennzeichen von YNAB; die Freigabe nach Datum wird zuerst als Vorschau gezeigt |
 | `import_transactions` | wird sofort angewendet, ohne Vorschau; hier nicht rückgängig zu machen | es holt nur, was die Bank bereits hat; eine Transaktion in YNAB löschen, um sie zurückzunehmen |
 | `update_category`, `create_category` | nicht rückgängig zu machen; die API von YNAB kann keine Kategorie löschen | zurückbenennen; die Kategorie in YNAB ausblenden |
 | `rename_payee` | benennt einen Zahlungsempfänger auf einmal um; die API von YNAB kann zwei nicht zusammenführen, daher wird ein Name abgelehnt, den ein anderer Zahlungsempfänger schon trägt | die anderen Texte des Ladens ebenfalls umbenennen oder die Zahlungsempfänger in YNAB zusammenführen |

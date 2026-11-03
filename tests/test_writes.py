@@ -58,6 +58,7 @@ def test_plan_lists_each_change_with_before_and_after() -> None:
             "from_category": None,
             "to_category_id": "c-food",
             "to_category": "Groceries",
+            "approved": False,
         },
         {
             "transaction_id": "t2",
@@ -68,9 +69,31 @@ def test_plan_lists_each_change_with_before_and_after() -> None:
             "from_category": "Leisure",
             "to_category_id": "c-food",
             "to_category": "Groceries",
+            "approved": False,
         },
     ]
     assert plan.unchanged_count == 0
+
+
+def test_plan_carries_each_transactions_approval() -> None:
+    """The change records whether the transaction is approved, so the write keeps it."""
+    plan = writes.plan_categorization(
+        [_tx("t1", approved=True), _tx("t2", approved=False)],
+        _CATEGORIES,
+        [
+            writes.Assignment(transaction_id="t1", category_id="c-food"),
+            writes.Assignment(transaction_id="t2", category_id="c-food"),
+        ],
+    )
+    assert [c.approved for c in plan.changes] == [True, False]
+
+
+def test_undo_carries_each_transactions_approval() -> None:
+    """Undoing keeps the approval the transaction has now."""
+    plan = writes.plan_undo(
+        [_tx("t1", "c-food", approved=True)], _CATEGORIES, [_move("t1", "c-fun", "c-food")]
+    )
+    assert [c.approved for c in plan.changes] == [True]
 
 
 def test_plan_skips_assignments_that_change_nothing() -> None:
@@ -82,6 +105,70 @@ def test_plan_skips_assignments_that_change_nothing() -> None:
     )
     assert not plan.changes
     assert plan.unchanged_count == 1
+
+
+def test_plan_can_clear_a_category() -> None:
+    """A null category takes the category away: the change goes to none."""
+    plan = writes.plan_categorization(
+        [_tx("t1", "c-food")],
+        _CATEGORIES,
+        [writes.Assignment(transaction_id="t1", category_id=None)],
+    )
+    assert [(c.from_category, c.to_category_id, c.to_category) for c in plan.changes] == [
+        ("Groceries", None, None)
+    ]
+
+
+def test_clearing_an_uncategorised_transaction_changes_nothing() -> None:
+    """No category already counts as unchanged, not as an error."""
+    plan = writes.plan_categorization(
+        [_tx("t1")],
+        _CATEGORIES,
+        [writes.Assignment(transaction_id="t1", category_id=None)],
+    )
+    assert not plan.changes
+    assert plan.unchanged_count == 1
+
+
+def test_clearing_with_approve_approves_a_row_with_no_category() -> None:
+    """With approve, an uncategorised row asked to be cleared is listed to approve."""
+    plan = writes.plan_categorization(
+        [_tx("t1", approved=False), _tx("t2", "c-food", approved=False)],
+        _CATEGORIES,
+        [
+            writes.Assignment(transaction_id="t1", category_id=None),
+            writes.Assignment(transaction_id="t2", category_id=None),
+        ],
+        approve=True,
+    )
+    assert [c.transaction_id for c in plan.to_approve] == ["t1"]
+    assert [(c.transaction_id, c.approved) for c in plan.changes] == [("t2", True)]
+
+
+def test_clearing_the_internal_uncategorized_changes_nothing() -> None:
+    """YNAB's internal Uncategorized counts as no category."""
+    internal = {
+        "id": "c-uncat",
+        "name": "Uncategorized",
+        "category_group_name": "Internal Master Category",
+    }
+    plan = writes.plan_categorization(
+        [_tx("t1", "c-uncat")],
+        [*_CATEGORIES, internal],
+        [writes.Assignment(transaction_id="t1", category_id=None)],
+    )
+    assert not plan.changes
+    assert plan.unchanged_count == 1
+
+
+def test_clearing_still_refuses_a_transfer() -> None:
+    """Clearing keeps the checks a category would meet: a transfer takes none."""
+    with pytest.raises(ValueError, match="transfer"):
+        writes.plan_categorization(
+            [_tx("t1", "c-food", transfer_account_id="acc2")],
+            _CATEGORIES,
+            [writes.Assignment(transaction_id="t1", category_id=None)],
+        )
 
 
 def test_plan_rejects_an_unknown_transaction() -> None:
@@ -316,6 +403,7 @@ def test_undo_lists_each_change_the_other_way_round() -> None:
             "from_category": "Groceries",
             "to_category_id": "c-fun",
             "to_category": "Leisure",
+            "approved": False,
         }
     ]
     assert not plan.conflicts
@@ -359,3 +447,94 @@ def test_undo_shows_bank_text_safely() -> None:
     changes = writes.plan_undo([forged], _CATEGORIES, [_move("t1", None, "c-food")]).changes
     assert len(changes) == 1
     assert changes[0].payee == "Shop RENT 0.00"
+
+
+def test_approvals_reads_each_transactions_approval() -> None:
+    """A transaction without an approval counts as unapproved."""
+    txs = [_tx("t1", approved=True), _tx("t2", approved=False), _tx("t3")]
+    assert writes.approvals(txs) == {"t1": True, "t2": False, "t3": False}
+
+
+# ---------------------------------------------------------------------------
+# Categorise and approve in one operation
+# ---------------------------------------------------------------------------
+
+
+def _approving(txs: list[dict[str, Any]], *assign: tuple[str, str]) -> writes.Plan:
+    assignments = [writes.Assignment(transaction_id=t, category_id=c) for t, c in assign]
+    return writes.plan_categorization(txs, _CATEGORIES, assignments, approve=True)
+
+
+def test_an_approving_plan_sends_every_change_approved() -> None:
+    """With approve, each change carries approved=true, whatever the transaction had."""
+    plan = _approving([_tx("t1", approved=False), _tx("t2", approved=True)], ("t1", "c-food"))
+    assert [c.approved for c in plan.changes] == [True]
+    assert plan.approve is True
+
+
+def test_an_approving_plan_approves_what_is_already_in_the_right_category() -> None:
+    """Unapproved transactions already in their category are listed to approve, not counted."""
+    plan = _approving(
+        [_tx("t1", "c-food", approved=False), _tx("t2", "c-food", approved=True), _tx("t3")],
+        ("t1", "c-food"),
+        ("t2", "c-food"),
+        ("t3", "c-fun"),
+    )
+    assert [c.transaction_id for c in plan.changes] == ["t3"]
+    assert [c.model_dump() for c in plan.to_approve] == [
+        {
+            "transaction_id": "t1",
+            "date": "2026-09-01",
+            "amount": -12.34,
+            "payee": "Corner Shop",
+            "from_category_id": "c-food",
+            "from_category": "Groceries",
+            "to_category_id": "c-food",
+            "to_category": "Groceries",
+            "approved": True,
+        }
+    ]
+    assert plan.unchanged_count == 1
+
+
+def test_a_plan_without_approve_approves_nothing() -> None:
+    """The default leaves approvals as they are: an unapproved unchanged row is just unchanged."""
+    plan = writes.plan_categorization(
+        [_tx("t1", "c-food", approved=False)],
+        _CATEGORIES,
+        [writes.Assignment(transaction_id="t1", category_id="c-food")],
+    )
+    assert not plan.to_approve
+    assert plan.approve is False
+    assert plan.unchanged_count == 1
+
+
+def test_the_subject_binds_the_approve_flag() -> None:
+    """Approving or not is part of what is confirmed, even when every change is approved."""
+    txs = [_tx("t1", approved=True)]
+    assign = [writes.Assignment(transaction_id="t1", category_id="c-food")]
+    without = writes.plan_categorization(txs, _CATEGORIES, assign)
+    with_approve = writes.plan_categorization(txs, _CATEGORIES, assign, approve=True)
+    assert without.changes == with_approve.changes
+    assert writes.fingerprint("b1", writes.subject_of(without)) != writes.fingerprint(
+        "b1", writes.subject_of(with_approve)
+    )
+
+
+def test_the_subject_ignores_the_order_of_assignments() -> None:
+    """The same assignments in another order confirm the same thing."""
+    txs = [_tx("t1", "c-food"), _tx("t2")]
+    one = _approving(txs, ("t1", "c-food"), ("t2", "c-fun"))
+    other = _approving(txs, ("t2", "c-fun"), ("t1", "c-food"))
+    assert writes.fingerprint("b1", writes.subject_of(one)) == writes.fingerprint(
+        "b1", writes.subject_of(other)
+    )
+
+
+def test_the_subject_binds_each_row_to_approve() -> None:
+    """A transaction to approve whose amount changed since is a different subject."""
+    before = _approving([_tx("t1", "c-food")], ("t1", "c-food"))
+    after = _approving([_tx("t1", "c-food", amount=-99990)], ("t1", "c-food"))
+    assert writes.fingerprint("b1", writes.subject_of(before)) != writes.fingerprint(
+        "b1", writes.subject_of(after)
+    )

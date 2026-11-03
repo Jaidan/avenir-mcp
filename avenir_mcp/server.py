@@ -100,6 +100,8 @@ def main(argv: list[str] | None = None) -> None:
     takes no other argument: its configuration is in the environment.
 
     Read-only unless AVENIR_MCP_WRITE=1: write tools are then registered too.
+    AVENIR_MCP_AUTO_CONFIRM=1 (this fork only) applies the writes undo_operation can
+    revert without asking; it cannot be combined with AVENIR_MCP_REQUIRE_ELICITATION=1.
     Diagnostics go to stderr (stdout belongs to the protocol in stdio mode), at
     AVENIR_MCP_LOG_LEVEL, WARNING by default, as text or, with
     AVENIR_MCP_LOG_FORMAT=json, one JSON object per line.
@@ -116,6 +118,10 @@ def main(argv: list[str] | None = None) -> None:
 
     Args:
         argv: The command-line arguments; None for sys.argv.
+
+    Raises:
+        SystemExit: If AVENIR_MCP_AUTO_CONFIRM=1 and AVENIR_MCP_REQUIRE_ELICITATION=1
+            are both set.
     """
     if (sys.argv[1:] if argv is None else argv) == ["--version"]:
         print(f"avenir-mcp {__version__} (YNAB API v{YNAB_API_VERSION})")
@@ -124,6 +130,17 @@ def main(argv: list[str] | None = None) -> None:
         os.getenv("AVENIR_MCP_LOG_LEVEL", "WARNING").upper(),
         os.getenv("AVENIR_MCP_LOG_FORMAT", "text"),
     )
+    auto_confirm = os.getenv("AVENIR_MCP_AUTO_CONFIRM") == "1"
+    if auto_confirm and os.getenv("AVENIR_MCP_REQUIRE_ELICITATION") == "1":
+        raise SystemExit(
+            "AVENIR_MCP_AUTO_CONFIRM=1 and AVENIR_MCP_REQUIRE_ELICITATION=1 contradict each "
+            "other: unset one."
+        )
+    if auto_confirm:
+        logger.warning(
+            "AVENIR_MCP_AUTO_CONFIRM=1: writes undo_operation can revert apply without asking"
+        )
+        mcp.instructions = context.guide_text(auto_confirm=True)
     writes = os.getenv("AVENIR_MCP_WRITE") == "1"
     configure(enable_writes=writes)
     update = updates.check(os.environ, __version__, datetime.now(UTC))

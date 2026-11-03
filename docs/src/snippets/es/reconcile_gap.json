@@ -6,6 +6,7 @@
     "account_id": "acc-checking",
     "bank_balance": 3440.8,
     "cleared_balance": 3328.5,
+    "ynab_cleared_balance": 3328.5,
     "working_balance": 3328.5,
     "difference": 112.3,
     "to_reconcile_count": 54,

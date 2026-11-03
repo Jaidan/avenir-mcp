@@ -85,9 +85,10 @@ hour's budget, and a request YNAB never answered reaches the agent as
 Otherwise the tool returns the preview and a single-use code (`writes.Confirmations`)
 bound to a SHA-256 fingerprint of exactly that preview, valid ten minutes, kept in
 memory. With `AVENIR_MCP_REQUIRE_ELICITATION=1`, codes are disabled. Two write tools
-act at once, without a preview: `approve_transactions` (marks transactions as
-reviewed) and `import_transactions` (asks YNAB to import what linked banks already
-have).
+act at once, without a preview: `approve_transactions` given ids (marks those
+transactions as reviewed) and `import_transactions` (asks YNAB to import what linked
+banks already have). `approve_transactions` given dates selects the transactions
+itself, so it is previewed and confirmed like the other writes.
 
 ### Journal and undo
 

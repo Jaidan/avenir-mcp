@@ -19,6 +19,7 @@ configuración.
 | `YNAB_API_KEY_FILE` | sin definir | Un archivo con el token, usado cuando `YNAB_API_KEY` no está definida. |
 | `AVENIR_MCP_WRITE` | sin definir: solo lectura | `1` registra las herramientas que modifican su plan. |
 | `AVENIR_MCP_REQUIRE_ELICITATION` | sin definir | `1` solo acepta un sí dado en el cliente: sin códigos de confirmación. |
+| `AVENIR_MCP_AUTO_CONFIRM` | sin definir | `1` (solo este fork) aplica sin preguntar las escrituras que `undo_operation` puede deshacer. |
 | `AVENIR_MCP_TRANSPORT` | `stdio` | `stdio` o `http`. |
 | `AVENIR_MCP_HOST` | `127.0.0.1` | Dirección HTTP. |
 | `AVENIR_MCP_PORT` | `8103` | Puerto HTTP. |
@@ -71,7 +72,7 @@ macOS puede pedir una vez permiso para que `security` lea el elemento.
 
 ### `AVENIR_MCP_WRITE`
 
-Exactamente `1` registra las 14 herramientas de escritura. Cualquier otro valor, o
+Exactamente `1` registra las 15 herramientas de escritura. Cualquier otro valor, o
 ninguno, mantiene el servidor en solo lectura: esas herramientas no se listan ni se
 pueden llamar. Se lee una vez, al arrancar.
 
@@ -82,6 +83,19 @@ confirmación del propio cliente. Los códigos de confirmación ni se emiten ni 
 una pregunta cerrada cuenta como no, y un cliente que no sabe preguntar recibe un error.
 Úselo cuando el modelo podría transmitir un código sin preguntarle — vea
 [Confirmación](/avenir-mcp/es/concepts/confirmation/#exigir-la-respuesta-del-propio-usuario).
+
+### `AVENIR_MCP_AUTO_CONFIRM`
+
+Exactamente `1`, solo en este fork: una escritura que `undo_operation` puede deshacer se
+aplica enseguida, sin ventana de confirmación ni código, y el servidor la registra como
+advertencia. Las escrituras que no se pueden deshacer siguen preguntando:
+`split_transaction`, `create_category`, `update_category`, la aprobación por fechas,
+`apply_categories` con `approve`, un objetivo que YNAB no puede restaurar, y toda
+anulación. Así, `reconcile_account` concilia en la primera llamada cuando los saldos
+coinciden, y con `adjust` crea enseguida la transacción **Balance adjustment**. `approve_transactions` con
+identificadores nunca pregunta, con o sin este ajuste. Un código de confirmación que se
+pase se sigue comprobando. No se combina con
+`AVENIR_MCP_REQUIRE_ELICITATION=1`: el servidor se niega a arrancar.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`
 

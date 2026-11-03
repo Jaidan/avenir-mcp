@@ -195,3 +195,38 @@ def test_category_names_cannot_forge_lines_in_the_undo_question(month: FakeMonth
     asked: list[str] = []
     call("undo_operation", {"plan_id": "b1"}, asking(asked))
     assert one_line(asked[0])
+
+
+def test_a_failed_undo_write_says_which_category_is_back(month: FakeMonth) -> None:
+    """Undoing a move stops at a failed write, says what is back, and stays undoable."""
+    call("move_money", _ARGS, accept)
+    month.failing_calls = {4}
+    result = call("undo_operation", {"plan_id": "b1"}, accept)
+    assert result.is_error
+    assert "Restored: Restaurants." in result.content[0].text
+    assert "Not restored: Tennis." in result.content[0].text
+    assert "undo_operation" in result.content[0].text
+
+
+def test_a_half_undone_move_is_finished_by_another_undo(month: FakeMonth) -> None:
+    """The category already back counts as restored, so a retry restores the other one."""
+    call("move_money", _ARGS, accept)
+    month.failing_calls = {4}
+    assert call("undo_operation", {"plan_id": "b1"}, accept).is_error
+    assert month.budgeted["c-food"] == 120000
+    month.failing_calls = set()
+    retried = call("undo_operation", {"plan_id": "b1"}, accept).structured_content
+    assert (retried["status"], retried["conflicts"]) == ("applied", [])
+    assert month.budgeted == {"c-food": 120000, "c-fun": 80000, "c-car": 0}
+
+
+def test_an_unanswered_undo_write_may_be_back(month: FakeMonth) -> None:
+    """A restore YNAB never answered is named as possibly back, to check in YNAB."""
+    call("move_money", _ARGS, accept)
+    lost = retry.no_answer("patch", httpx.ReadTimeout("no answer"), 1)
+    month.failure = retry.YnabUnavailable(lost)
+    month.failing_calls = {4}
+    text = call("undo_operation", {"plan_id": "b1"}, accept).content[0].text
+    assert "Tennis may be back: check it in YNAB" in text
+    assert "Restored: Restaurants." in text
+    assert "Not restored" not in text

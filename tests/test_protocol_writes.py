@@ -15,9 +15,9 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 
-from avenir_mcp import confirm, server
+from avenir_mcp import confirm, journal, retry, server
 
-from .mcp_helpers import FLAT, FORGED, accept, call, decline
+from .mcp_helpers import FLAT, FORGED, accept, asking, call, decline
 
 _CATS = [
     {"id": "c-food", "name": "Groceries"},
@@ -46,20 +46,40 @@ class _Budget:
     def __init__(self) -> None:
         self.transactions = _txs()
         self.patches: list[list[tuple[str, str | None]]] = []
+        self.sent_approved: list[dict[str, bool]] = []
+        self.approved_ids: list[list[str]] = []
+        self.approve_fails: Exception | None = None
+
+    @property
+    def approved_sent(self) -> dict[str, bool]:
+        """Every approval sent with a category, the latest for each transaction."""
+        return {k: v for sent in self.sent_approved for k, v in sent.items()}
+
+    async def approve_transactions(self, _budget_id: str, tx_ids: list[str]) -> dict[str, int]:
+        """Record the bulk approval and apply it, or fail as YNAB can."""
+        if self.approve_fails is not None:
+            raise self.approve_fails
+        self.approved_ids.append(tx_ids)
+        for tx in self.transactions:
+            if tx["id"] in tx_ids:
+                tx["approved"] = True
+        return {"approved": len(tx_ids)}
 
     async def get_transactions(self, _budget_id: str) -> list[dict[str, Any]]:
         """Return a copy of the transactions, as YNAB would."""
         return [dict(tx) for tx in self.transactions]
 
     async def set_transaction_categories(
-        self, _budget_id: str, moves: list[tuple[str, str | None]]
+        self, _budget_id: str, moves: list[tuple[str, str | None]], approved: dict[str, bool]
     ) -> list[str]:
-        """Record the PATCH and apply it to the fake budget."""
+        """Record the PATCH and apply it to the fake budget, approval included."""
         self.patches.append(moves)
+        self.sent_approved.append(approved)
         for tx_id, category_id in moves:
             for tx in self.transactions:
                 if tx["id"] == tx_id:
                     tx["category_id"] = category_id
+                    tx["approved"] = approved[tx_id]
         return [tx_id for tx_id, _ in moves]
 
 
@@ -72,6 +92,7 @@ def _budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_Budget
         patch("avenir_mcp.client.get_categories", AsyncMock(return_value=_CATS)),
         patch("avenir_mcp.client.get_accounts", AsyncMock(return_value=_ACCOUNTS)),
         patch("avenir_mcp.client.set_transaction_categories", fake.set_transaction_categories),
+        patch("avenir_mcp.client.approve_transactions", fake.approve_transactions),
     ):
         yield fake
 
@@ -195,6 +216,48 @@ def test_undo_restores_previous_categories(budget: _Budget) -> None:
     assert "Nothing to undo" in again.content[0].text
 
 
+def test_apply_categories_keeps_the_transaction_approved(budget: _Budget) -> None:
+    """YNAB unapproves an update that omits `approved`: an approved transaction stays so."""
+    budget.transactions[0]["approved"] = True
+    call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}, accept)
+    assert budget.sent_approved == [{"t1": True}]
+    assert budget.transactions[0]["approved"] is True
+
+
+def test_undo_gives_a_cleared_category_back(budget: _Budget) -> None:
+    """Clearing sends a null category; undo puts the previous category back."""
+    budget.transactions[0]["category_id"] = "c-food"
+    clear = [{"transaction_id": "t1", "category_id": None}]
+    data = call("apply_categories", {"plan_id": "b1", "assignments": clear}, accept)
+    assert data.structured_content["status"] == "applied"
+    assert budget.patches == [[("t1", None)]]
+    assert budget.transactions[0]["category_id"] is None
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert budget.patches[-1] == [("t1", "c-food")]
+    assert budget.transactions[0]["category_id"] == "c-food"
+
+
+@pytest.mark.usefixtures("budget")
+def test_approving_an_uncategorised_row_says_it_has_no_category() -> None:
+    """An approve-only row with no category reads "no category", not an empty name."""
+    asked: list[str] = []
+    clear = [{"transaction_id": "t1", "category_id": None}]
+    call(
+        "apply_categories", {"plan_id": "b1", "assignments": clear, "approve": True}, asking(asked)
+    )
+    assert "no category (approve)" in asked[0]
+
+
+def test_undo_keeps_the_transaction_approved(budget: _Budget) -> None:
+    """Undoing a categorisation sends the approval the transaction has."""
+    budget.transactions.append(budget.transactions[0] | {"id": "t2", "approved": False})
+    budget.transactions[0]["approved"] = True
+    assign = [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-food"}]
+    call("apply_categories", {"plan_id": "b1", "assignments": assign}, accept)
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert budget.sent_approved[-1] == {"t1": True, "t2": False}
+
+
 def test_undo_leaves_alone_what_was_changed_since(budget: _Budget) -> None:
     """A transaction recategorised after the operation is reported, not overwritten."""
     call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}, accept)
@@ -304,3 +367,248 @@ def test_category_names_are_previewed_on_one_line(budget: _Budget) -> None:
         data = call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN})
     assert data.structured_content["changes"][0]["to_category"] == FLAT
     assert not budget.patches
+
+
+# ---------------------------------------------------------------------------
+# apply_categories with approve
+# ---------------------------------------------------------------------------
+
+
+def _unapproved_t2(category_id: str = "c-fun") -> dict[str, Any]:
+    return {**_txs()[0], "id": "t2", "category_id": category_id, "approved": False}
+
+
+def test_apply_can_approve_in_the_same_call(budget: _Budget) -> None:
+    """approve=true sends approved with the category, and approves what was already right."""
+    budget.transactions.append(_unapproved_t2())
+    args = {
+        "plan_id": "b1",
+        "approve": True,
+        "assignments": [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-fun"}],
+    }
+    result = call("apply_categories", args, accept).structured_content
+    assert result["status"] == "applied"
+    assert budget.approved_sent == {"t1": True}
+    assert budget.approved_ids == [["t2"]]
+    assert [c["transaction_id"] for c in result["approvals"]] == ["t2"]
+    assert result["unchanged_count"] == 0
+    assert "restores the categories only" in result["message"]
+
+
+def test_without_approve_nothing_is_approved(budget: _Budget) -> None:
+    """The default keeps each approval and approves nothing else."""
+    budget.transactions.append(_unapproved_t2())
+    args = {
+        "plan_id": "b1",
+        "assignments": [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-fun"}],
+    }
+    result = call("apply_categories", args, accept).structured_content
+    assert budget.approved_sent == {"t1": False}
+    assert budget.approved_ids == []
+    assert result["approvals"] == []
+    assert result["unchanged_count"] == 1
+
+
+def test_the_question_says_and_approve_and_shows_each_row(budget: _Budget) -> None:
+    """Rows only approved are listed in the question, after the changes."""
+    budget.transactions.append(_unapproved_t2())
+    asked: list[str] = []
+
+    async def accept_and_keep(message: str, *_: Any) -> ElicitResult[Any]:
+        asked.append(message)
+        return ElicitResult(action="accept", content={"value": True})
+
+    assign = [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-fun"}]
+    call(
+        "apply_categories",
+        {"plan_id": "b1", "assignments": assign, "approve": True},
+        accept_and_keep,
+    )
+    assert asked[0].splitlines() == [
+        "Recategorise and approve 2 transaction(s)?",
+        "- 2026-09-02 Corner Shop -7.25: no category → Groceries",
+        "- 2026-09-02 Corner Shop -7.25: Leisure (approve)",
+    ]
+
+
+def test_long_approving_preview_counts_the_rows_beyond_twenty(budget: _Budget) -> None:
+    """Changes and rows to approve share the 20-line cap."""
+    budget.transactions = [dict(_txs()[0], id=f"t{i}") for i in range(15)]
+    budget.transactions += [_unapproved_t2() | {"id": f"a{i}"} for i in range(10)]
+    asked: list[str] = []
+
+    async def accept_and_keep(message: str, *_: Any) -> ElicitResult[Any]:
+        asked.append(message)
+        return ElicitResult(action="accept", content={"value": True})
+
+    assign = [{"transaction_id": f"t{i}", "category_id": "c-food"} for i in range(15)]
+    assign += [{"transaction_id": f"a{i}", "category_id": "c-fun"} for i in range(10)]
+    call(
+        "apply_categories",
+        {"plan_id": "b1", "assignments": assign, "approve": True},
+        accept_and_keep,
+    )
+    lines = asked[0].splitlines()
+    assert lines[0] == "Recategorise and approve 25 transaction(s)?"
+    assert sum("(approve)" in line for line in lines) == 5
+    assert lines[-1] == "- … and 5 more"
+
+
+def test_approving_only_is_something_to_do(budget: _Budget) -> None:
+    """Every category already right but unapproved: approved, nothing journaled to undo."""
+    budget.transactions = [_unapproved_t2("c-food") | {"id": "t1"}]
+    result = call(
+        "apply_categories", {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}, accept
+    ).structured_content
+    assert result["status"] == "applied"
+    assert result["operation_id"] is None
+    assert "cannot be undone" in result["message"]
+    assert budget.approved_ids == [["t1"]]
+    assert not budget.patches
+    assert call("undo_operation", {"plan_id": "b1"}, accept).is_error
+
+
+def test_a_code_for_categorising_cannot_approve(budget: _Budget) -> None:
+    """The code binds the approve flag too."""
+    budget.transactions[0]["approved"] = True
+    code = call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}).structured_content[
+        "confirmation"
+    ]
+    again = call(
+        "apply_categories",
+        {"plan_id": "b1", "assignments": _ASSIGN, "approve": True, "confirmation": code},
+    )
+    assert again.is_error
+    assert not budget.patches
+
+
+def test_an_approving_code_works_for_assignments_in_another_order(budget: _Budget) -> None:
+    """The code confirms the same assignments, whatever their order."""
+    budget.transactions.append(_unapproved_t2())
+    assign = [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-fun"}]
+    args = {"plan_id": "b1", "approve": True}
+    code = call("apply_categories", {**args, "assignments": assign}).structured_content[
+        "confirmation"
+    ]
+    done = call(
+        "apply_categories", {**args, "assignments": assign[::-1], "confirmation": code}
+    ).structured_content
+    assert done["status"] == "applied"
+    assert budget.approved_ids == [["t2"]]
+
+
+def test_a_code_is_stale_once_a_row_to_approve_changes(budget: _Budget) -> None:
+    """A row to approve whose amount changed since the preview is not what was confirmed."""
+    budget.transactions.append(_unapproved_t2())
+    assign = [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-fun"}]
+    args = {"plan_id": "b1", "approve": True, "assignments": assign}
+    code = call("apply_categories", args).structured_content["confirmation"]
+    budget.transactions[1]["amount"] = -99990
+    result = call("apply_categories", {**args, "confirmation": code})
+    assert result.is_error
+    assert not budget.patches
+    assert not budget.approved_ids
+
+
+_REFUSED = RuntimeError("YNAB 400: refused")
+_NO_ANSWER = retry.YnabUnavailable("YNAB did not answer")
+
+
+@pytest.mark.parametrize(
+    ("failure", "outcome"),
+    [
+        (_REFUSED, "nothing was approved"),
+        (_NO_ANSWER, "the approval may or may not have applied: check in YNAB"),
+    ],
+)
+def test_a_failed_approval_names_the_operation_to_undo(
+    budget: _Budget, tmp_path: Path, failure: Exception, outcome: str
+) -> None:
+    """Categories are journaled before approving: if approving fails, the error says how to undo."""
+    budget.transactions.append(_unapproved_t2())
+    budget.approve_fails = failure
+    assign = [*_ASSIGN, {"transaction_id": "t2", "category_id": "c-fun"}]
+    result = call(
+        "apply_categories", {"plan_id": "b1", "assignments": assign, "approve": True}, accept
+    )
+    assert result.is_error
+    text = result.content[0].text
+    assert str(failure) in text
+    assert outcome in text
+    assert budget.patches == [[("t1", "c-food")]]
+    entry = journal.Journal(tmp_path / "journal.jsonl").find("b1")
+    assert entry is not None
+    assert f"undo_operation with operation_id {entry.operation_id} reverts them" in text
+
+
+def test_a_refused_approval_of_rows_only_says_nothing_changed(budget: _Budget) -> None:
+    """YNAB refused and there was no category to change: nothing changed at all."""
+    budget.transactions = [_unapproved_t2("c-food") | {"id": "t1"}]
+    budget.approve_fails = _REFUSED
+    result = call(
+        "apply_categories", {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}, accept
+    )
+    assert result.is_error
+    assert result.content[0].text.endswith("nothing was approved and nothing was changed.")
+    assert not budget.patches
+
+
+def test_an_unanswered_approval_of_rows_only_says_to_check(budget: _Budget) -> None:
+    """YNAB answered nothing: the approval's outcome is unknown, and nothing claims otherwise."""
+    budget.transactions = [_unapproved_t2("c-food") | {"id": "t1"}]
+    budget.approve_fails = _NO_ANSWER
+    result = call(
+        "apply_categories", {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}, accept
+    )
+    assert result.is_error
+    text = result.content[0].text
+    assert text.endswith("the approval may or may not have applied: check in YNAB.")
+    assert "nothing was changed" not in text
+
+
+def test_undo_of_an_approving_operation_keeps_the_approval(budget: _Budget) -> None:
+    """Undo restores the category and leaves the transaction approved."""
+    call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}, accept)
+    assert budget.transactions[0]["approved"] is True
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert budget.patches[-1] == [("t1", None)]
+    assert budget.transactions[0]["approved"] is True
+
+
+# ---------------------------------------------------------------------------
+# AVENIR_MCP_AUTO_CONFIRM=1 (fork only)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(name="auto")
+def _auto(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_applies_a_recategorisation_at_once(budget: _Budget) -> None:
+    """Undoable: applied in the first call, with an operation to undo."""
+    data = call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}).structured_content
+    assert data["status"] == "applied"
+    assert data["operation_id"]
+    assert budget.patches == [[("t1", "c-food")]]
+
+
+@pytest.mark.usefixtures("auto")
+def test_auto_confirm_still_asks_before_approving(budget: _Budget) -> None:
+    """approve=true: approvals are not journaled, so the user is asked."""
+    args = {"plan_id": "b1", "assignments": _ASSIGN, "approve": True}
+    assert call("apply_categories", args).structured_content["status"] == "confirmation_required"
+    assert not budget.patches
+    assert not budget.approved_ids
+
+
+def test_auto_confirm_still_asks_before_a_category_undo(
+    budget: _Budget, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An undo cannot itself be undone: the recategorisation undo still asks."""
+    call("apply_categories", {"plan_id": "b1", "assignments": _ASSIGN}, accept)
+    monkeypatch.setenv("AVENIR_MCP_AUTO_CONFIRM", "1")
+    data = call("undo_operation", {"plan_id": "b1"}).structured_content
+    assert data["status"] == "confirmation_required"
+    assert len(budget.patches) == 1

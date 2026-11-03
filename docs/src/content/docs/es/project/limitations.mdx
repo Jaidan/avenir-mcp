@@ -11,7 +11,7 @@ sidebar:
 |---|---|---|
 | Códigos de confirmación | se guardan en memoria: un reinicio del servidor los olvida | pedir una nueva vista previa |
 | Deshacer | local a la máquina cuyo diario registró la operación; una anulación no se puede anular | rehacer el cambio |
-| `approve_transactions` | se aplica al momento, sin vista previa | solo quita la marca de revisión de YNAB |
+| `approve_transactions` por identificadores | se aplica al momento, sin vista previa; no se puede deshacer | solo quita la marca de revisión de YNAB; la aprobación por fechas se previsualiza antes |
 | `import_transactions` | se aplica al momento, sin vista previa; no se deshace aquí | solo trae lo que el banco ya tiene; borre una transacción en YNAB para revertirla |
 | `update_category`, `create_category` | no se pueden deshacer; la API de YNAB no puede borrar una categoría | renombrar de nuevo; ocultar la categoría en YNAB |
 | `rename_payee` | renombra un beneficiario a la vez; la API de YNAB no puede fusionar dos, así que se rechaza un nombre que ya tiene otro beneficiario | renombrar también las demás etiquetas de la tienda, o fusionar los beneficiarios en YNAB |

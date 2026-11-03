@@ -13,7 +13,7 @@ import httpx
 import pytest
 from hypothesis import HealthCheck, settings
 
-from avenir_mcp import client, server
+from avenir_mcp import client, server, sync
 
 # `just fuzz`: the same properties, many more examples each. What fails is saved in
 # .hypothesis/ and replayed, minimised, by the next ordinary run.
@@ -28,7 +28,7 @@ settings.register_profile(
 @pytest.fixture(autouse=True)
 def reset_cache() -> None:
     """Reset the in-memory delta-sync cache before every test."""
-    client._CACHE.clear()  # pylint: disable=protected-access
+    sync.clear()
     client.PACE.reset()
 
 

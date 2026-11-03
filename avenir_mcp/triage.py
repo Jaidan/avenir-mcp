@@ -95,9 +95,9 @@ class Triage(Model):
     """One page of pending transactions, with what is needed to classify them."""
 
     pending_count: int
-    """Transactions waiting for a category, in total."""
+    """Transactions waiting for a category, in total (within the date window, if one was given)."""
     suggested_count: int
-    """How many of them have a suggestion."""
+    """How many of them have a suggestion (within the date window, if one was given)."""
     items: list[PendingItem]
     """This page of pending transactions, newest first."""
     categories: list[CategoryChoice]
@@ -106,30 +106,53 @@ class Triage(Model):
     """Pass it back to get the next page; null on the last page."""
 
 
-def _encode_cursor(offset: int) -> str:
-    """Encode the offset of the next page as an opaque cursor.
+def _encode_cursor(offset: int, since: date | None, until: date | None) -> str:
+    """Encode the next page's offset and the date window it belongs to as an opaque cursor.
 
     Args:
         offset: Index of the first item of the next page.
+        since: First date of the window, or None for no start.
+        until: Last date of the window, or None for no end.
 
     Returns:
         The cursor.
     """
-    return base64.urlsafe_b64encode(f"offset:{offset}".encode()).decode()
+    window = f"{since.isoformat() if since else ''}:{until.isoformat() if until else ''}"
+    return base64.urlsafe_b64encode(f"offset:{offset}:{window}".encode()).decode()
 
 
 # The characters of URL-safe Base64, padding included: anything else is not a cursor of ours.
 _CURSOR_ALPHABET = frozenset(string.ascii_letters + string.digits + "-_=")
 
 
-def _decode_cursor(cursor: str) -> int:
+def _cursor_date(part: str) -> date | None:
+    """Read one date of a cursor, which is empty or exactly YYYY-MM-DD.
+
+    Args:
+        part: The text in the cursor.
+
+    Returns:
+        The date, or None when the part is empty.
+
+    Raises:
+        ValueError: If the part is any other date format.
+    """
+    if not part:
+        return None
+    parsed = date.fromisoformat(part)
+    if parsed.isoformat() != part:
+        raise ValueError(part)
+    return parsed
+
+
+def _decode_cursor(cursor: str) -> tuple[int, date | None, date | None]:
     """Decode a cursor made by :func:`_encode_cursor`.
 
     Args:
         cursor: The next_cursor of a previous page.
 
     Returns:
-        The offset it stands for.
+        The offset it stands for, and the first and last date of the window it was issued for.
 
     Raises:
         ValueError: If the cursor was not made by this module, saying what to pass.
@@ -142,20 +165,18 @@ def _decode_cursor(cursor: str) -> int:
         # ends in this same refusal anyway.
         if not set(cursor) <= _CURSOR_ALPHABET:  # pragma: no mutate
             raise ValueError(cursor)  # pragma: no mutate
-        # Splitting on the last colon instead of the first would only change what a
-        # cursor holding several of them decodes to, and neither reading of one leaves
-        # the prefix "offset" with digits after it.
         decoded = base64.urlsafe_b64decode(cursor.encode()).decode()
-        prefix, _, value = decoded.partition(":")  # pragma: no mutate
-        if prefix != "offset" or not value.isdigit():
+        parts = decoded.split(":")
+        if len(parts) != 4 or parts[0] != "offset" or not parts[1].isdigit():
             # The value given here is never read: the message below is what is raised.
             raise ValueError(cursor)  # pragma: no mutate
+        since, until = (_cursor_date(part) for part in parts[2:])
     except ValueError as error:  # binascii.Error and UnicodeDecodeError are ValueErrors
         raise ValueError(
             "Invalid cursor: pass the next_cursor value from the previous page unchanged, "
             "or omit it to start from the first page."
         ) from error
-    return int(value)
+    return int(parts[1]), since, until
 
 
 # YNAB's own group, which holds "Inflow: Ready to Assign" and "Uncategorized".
@@ -201,6 +222,31 @@ def internal_uncategorized(categories: list[dict[str, Any]]) -> set[str]:
     }
 
 
+def is_uncategorized(tx: dict[str, Any], internal: set[str]) -> bool:
+    """Tell whether a transaction has no category of its own to give.
+
+    The one rule for "uncategorized", shared by suggest_categories and the
+    find_transactions filters. True when the transaction has no category (null, or
+    YNAB's internal Uncategorized), is not split (no live subtransaction; deleted
+    ones do not count) and is not a transfer.
+
+    Off-budget (tracking) accounts and deleted transactions are not looked at here:
+    the caller decides about them.
+
+    Args:
+        tx: A YNAB transaction.
+        internal: Ids of YNAB's internal Uncategorized category.
+
+    Returns:
+        True when it is uncategorized by this rule.
+    """
+    split = any(not sub.get("deleted") for sub in tx.get("subtransactions") or [])
+    category = tx.get("category_id")
+    return (
+        (not category or category in internal) and not split and not tx.get("transfer_account_id")
+    )
+
+
 def _is_pending(tx: dict[str, Any], off_budget: set[str], uncategorized: set[str]) -> bool:
     """Tell whether a transaction waits for a category.
 
@@ -210,14 +256,12 @@ def _is_pending(tx: dict[str, Any], off_budget: set[str], uncategorized: set[str
         uncategorized: Ids of YNAB's internal Uncategorized category.
 
     Returns:
-        True when it is not deleted, not a transfer, not a split (its lines carry the
+        True when it is not deleted, not a transfer, not a split (its live lines carry the
         categories), on an account that takes categories, and without a real category.
     """
     return (
         not tx.get("deleted")
-        and (not tx.get("category_id") or tx["category_id"] in uncategorized)
-        and not tx.get("transfer_account_id")
-        and not tx.get("subtransactions")
+        and is_uncategorized(tx, uncategorized)
         and tx.get("account_id") not in off_budget
     )
 
@@ -315,6 +359,66 @@ def _suggestion(
     )
 
 
+def _checked_offset(cursor: str | None, since: date | None, until: date | None) -> int:
+    """Check the window and the cursor against it, and say where the page starts.
+
+    Args:
+        cursor: ``next_cursor`` of the previous page, or None for the first page.
+        since: First date of the window, or None.
+        until: Last date of the window, or None.
+
+    Returns:
+        The index of the first item of the page.
+
+    Raises:
+        ValueError: If the dates are reversed, the cursor was not issued by this module, or
+            it was issued for another window.
+    """
+    if since is not None and until is not None and until < since:
+        raise ValueError(f"until_date {until} is before since_date {since}: swap them.")
+    if not cursor:
+        return 0
+    offset, cursor_since, cursor_until = _decode_cursor(cursor)
+    if (cursor_since, cursor_until) != (since, until):
+        raise ValueError(
+            "This cursor was issued for a different date window: pass the same since_date "
+            "and until_date as for the first page, or omit the cursor to start again."
+        )
+    return offset
+
+
+def _pending(
+    transactions: list[dict[str, Any]],
+    off_budget: set[str],
+    uncategorized: set[str],
+    since: date | None,
+    until: date | None,
+) -> list[dict[str, Any]]:
+    """The pending transactions dated within the window, newest first.
+
+    Args:
+        transactions: All the plan's transactions.
+        off_budget: Ids of tracking accounts.
+        uncategorized: Ids of YNAB's internal uncategorized categories.
+        since: First date, included, or None for no start.
+        until: Last date, included, or None for no end.
+
+    Returns:
+        The transactions waiting for a category, newest first.
+    """
+    return sorted(
+        (
+            tx
+            for tx in transactions
+            if _is_pending(tx, off_budget, uncategorized)
+            and (since is None or tx["date"] >= since.isoformat())
+            and (until is None or tx["date"] <= until.isoformat())
+        ),
+        key=lambda tx: tx["date"],
+        reverse=True,
+    )
+
+
 def prepare(  # pylint: disable=too-many-arguments
     transactions: list[dict[str, Any]],
     categories: list[dict[str, Any]],
@@ -323,6 +427,8 @@ def prepare(  # pylint: disable=too-many-arguments
     cursor: str | None = None,
     threshold: float | None = None,
     off_budget: set[str] | frozenset[str] = frozenset(),
+    since: date | None = None,
+    until: date | None = None,
 ) -> Triage:
     """Page through the pending transactions, newest first, with suggestions.
 
@@ -333,22 +439,22 @@ def prepare(  # pylint: disable=too-many-arguments
         cursor: ``next_cursor`` of the previous page, or None for the first page.
         threshold: Confidence needed for a suggestion; defaults to the classifier's.
         off_budget: Ids of tracking accounts, whose transactions take no category.
+        since: First date of the pending transactions to list, or None for no start. The
+            history that suggestions come from is never limited by it.
+        until: Last date of the pending transactions to list, or None for no end.
 
     Returns:
-        One page, the total pending, the cursor of the next page and, on the first page,
-        the categories to choose from.
+        One page, the total pending in the window, the cursor of the next page and, on the first
+        page, the categories to choose from.
 
     Raises:
-        ValueError: If ``cursor`` was not issued by this function.
+        ValueError: If the dates are reversed, ``cursor`` was not issued by this function,
+            or it was issued for another window.
     """
-    offset = _decode_cursor(cursor) if cursor else 0
+    offset = _checked_offset(cursor, since, until)
     uncategorized = internal_uncategorized(categories)
     histories = _histories(transactions)
-    pending = sorted(
-        (tx for tx in transactions if _is_pending(tx, set(off_budget), uncategorized)),
-        key=lambda tx: tx["date"],
-        reverse=True,
-    )
+    pending = _pending(transactions, set(off_budget), uncategorized, since, until)
     transfers = _transfer_pairs(pending)
     items = [
         PendingItem(
@@ -358,12 +464,10 @@ def prepare(  # pylint: disable=too-many-arguments
         )
         for tx in pending
     ]
-    suggested = sum(1 for item in items if item.suggestion is not None)
-
     end = offset + limit
     return Triage(
         pending_count=len(pending),
-        suggested_count=suggested,
+        suggested_count=sum(1 for item in items if item.suggestion is not None),
         items=items[offset:end],
         categories=(
             []
@@ -376,5 +480,5 @@ def prepare(  # pylint: disable=too-many-arguments
                 if not c.get("deleted") and c["id"] not in uncategorized
             ]
         ),
-        next_cursor=_encode_cursor(end) if end < len(items) else None,
+        next_cursor=_encode_cursor(end, since, until) if end < len(items) else None,
     )

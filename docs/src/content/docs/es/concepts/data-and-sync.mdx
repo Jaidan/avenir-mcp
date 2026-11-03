@@ -91,14 +91,14 @@ y se indica en su [página de referencia](/avenir-mcp/es/reference/tools/):
 | Coste | Herramientas |
 |---|---|
 | 0 | toda llamada rechazada por la validación (un mes mal formado, un nombre vacío…) |
-| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions`, la vista previa de `set_category_budget`, la vista previa de `move_money`, la vista previa de `flag_transactions`, la vista previa de `set_category_target` |
+| 1 | `list_plans`, `list_accounts`, `list_category_groups`, `get_monthly_summary`, `get_age_of_money`, `get_category_balances`, `get_budget_vs_actual`, `get_underfunded_targets`, `get_debt_payoff_plan`, `approve_transactions` por identificadores, la vista previa de `set_category_budget`, la vista previa de `set_category_budgets`, la vista previa de `move_money`, la vista previa de `flag_transactions`, la vista previa de `set_category_target` |
 | 2 | `get_net_worth_trend`, `get_runway`, `get_debt_payoff_plan` sin `monthly_budget` cuando falta un pago mínimo, `reconcile_account`, `create_transactions`, `create_category`, `update_category`, `list_payees`, la vista previa de `rename_payee`, `undo_operation` |
-| 3 | `get_runway` con `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (una página entera), `apply_categories`, la vista previa de `split_transaction` |
-| 4 | `forecast_balance` |
+| 3 | `get_runway` con `essential_groups`, `get_savings_rate`, `find_transactions`, `find_recurring_charges`, `list_scheduled_transactions`, `suggest_categories` (una página entera), `apply_categories`, la vista previa de `split_transaction`, la vista previa de `approve_transactions` por fechas |
+| 4 | `forecast_balance`, `reconcile_account` cuando los totales no coinciden y los vuelve a leer |
 | 1 + N | `get_spending_trends` sobre N meses |
 
 Aplicar una escritura confirmada añade su propia petición (un único `PATCH` agrupado, sea
-cual sea el número de transacciones). Con la caché caliente, releer las transacciones
+cual sea el número de transacciones; `set_category_budgets` envía una por categoría que cambia). Con la caché caliente, releer las transacciones
 cuesta una pequeña petición incremental.
 
 Cuando se agota la cuota, YNAB responde `429`, y **esa respuesta nunca se

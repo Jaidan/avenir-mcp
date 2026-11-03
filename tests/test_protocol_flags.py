@@ -23,6 +23,7 @@ class FakeFlags:
         """Start with no flag, a blue flag and an empty one, as YNAB returns them."""
         self.flags: dict[str, str | None] = {"t1": None, "t2": "blue", "t3": ""}
         self.sent: list[list[tuple[str, str | None]]] = []
+        self.approved: dict[str, bool] = {"t1": True, "t2": False, "t3": True}
 
     async def get_transactions(self, _plan_id: str, **_: Any) -> list[dict[str, Any]]:
         """The transactions, as YNAB returns them."""
@@ -34,14 +35,18 @@ class FakeFlags:
                 "amount": -12340,
                 "payee_name": payees[tx_id],
                 "flag_color": color,
+                "approved": self.approved[tx_id],
                 "deleted": False,
             }
             for tx_id, color in self.flags.items()
         ]
 
-    async def set_flags(self, _plan_id: str, changes: list[tuple[str, str | None]]) -> list[str]:
-        """Record and apply the flags."""
+    async def set_flags(
+        self, _plan_id: str, changes: list[tuple[str, str | None]], approved: dict[str, bool]
+    ) -> list[str]:
+        """Record and apply the flags and the approval sent with them."""
         self.sent.append(changes)
+        self.approved.update({tx_id: approved[tx_id] for tx_id, _ in changes})
         self.flags.update(changes)
         return [tx_id for tx_id, _ in changes]
 
@@ -147,6 +152,20 @@ def test_the_journal_keeps_the_colours_and_nothing_else(ynab: FakeFlags, tmp_pat
         ]
     }
     assert ynab.sent
+
+
+def test_flag_transactions_keeps_the_transaction_approved(ynab: FakeFlags) -> None:
+    """Flagging sends each transaction's own approval: approved stays, unapproved stays."""
+    call("flag_transactions", _args(), accept)
+    assert ynab.approved == {"t1": True, "t2": False, "t3": True}
+
+
+def test_undo_of_a_flag_keeps_the_transaction_approved(ynab: FakeFlags) -> None:
+    """Putting a flag back does not unapprove the transaction."""
+    call("flag_transactions", _args(), accept)
+    ynab.approved.update({"t1": False, "t2": True})
+    call("undo_operation", {"plan_id": "b1"}, accept)
+    assert ynab.approved == {"t1": False, "t2": True, "t3": True}
 
 
 def test_undo_puts_the_flags_back(ynab: FakeFlags) -> None:

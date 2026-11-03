@@ -18,7 +18,11 @@ pending transactions, the one whose amount matches the difference
 call again. Only if the user wants to accept the remaining gap, call with
 adjust=true: a "Balance adjustment" transaction is added to Ready to Assign.
 When balances match, every cleared transaction is marked reconciled after the
-user confirms (as for apply_categories). undo_operation reverts it.
+user confirms (as for apply_categories). undo_operation reverts it. If the
+account's transactions do not add up to the cleared balance YNAB shows, even
+after reading both again, nothing is asked or written (totals_disagree): call
+again in a minute, or ask the user to look in YNAB for an import matched to, or
+recently deleted from, the account.
 
 ## Comportement
 
@@ -45,13 +49,14 @@ user confirms (as for apply_categories). undo_operation reverts it.
 
 | Champ | Type | Description |
 |---|---|---|
-| `status` | "applied" \| "confirmation_required" \| "declined" \| "nothing_to_do" \| "difference_found" | Outcome: difference_found (nothing changed; see analysis), confirmation_required, applied, declined, or nothing_to_do (already reconciled). |
+| `status` | "applied" \| "confirmation_required" \| "declined" \| "nothing_to_do" \| "difference_found" \| "totals_disagree" | Outcome: difference_found (nothing changed; see analysis), confirmation_required, applied, declined, nothing_to_do (already reconciled), or totals_disagree (nothing changed: the transactions avenir-mcp reads do not add up to YNAB's own cleared balance). |
 | `message` | string | What happened and what to do next, for the agent to relay. |
 | `account` | string | Account name. |
 | `analysis` | object | The comparison with the bank. |
 | `analysis.account_id` | string | The account analysed. |
 | `analysis.bank_balance` | number | Balance the bank shows, as given. |
 | `analysis.cleared_balance` | number | Sum of the account's cleared and reconciled transactions in YNAB. |
+| `analysis.ynab_cleared_balance` | number \| null | Cleared balance YNAB itself shows for the account; null when not checked. It equals cleared_balance unless avenir-mcp's copy of the transactions is out of date. |
 | `analysis.working_balance` | number | Sum of all the account's transactions, cleared or not. |
 | `analysis.difference` | number | Bank balance minus cleared balance; negative when YNAB counts more money than the bank. |
 | `analysis.to_reconcile_count` | integer | Cleared transactions not yet reconciled. |
@@ -86,6 +91,7 @@ Réponse sur le budget de démonstration :
     "account_id": "acc-checking",
     "bank_balance": 3440.8,
     "cleared_balance": 3328.5,
+    "ynab_cleared_balance": 3328.5,
     "working_balance": 3328.5,
     "difference": 112.3,
     "to_reconcile_count": 54,

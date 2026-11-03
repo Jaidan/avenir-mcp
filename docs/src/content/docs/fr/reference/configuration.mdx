@@ -19,6 +19,7 @@ fichier de configuration.
 | `YNAB_API_KEY_FILE` | absente | Un fichier contenant le jeton, utilisé quand `YNAB_API_KEY` est absente. |
 | `AVENIR_MCP_WRITE` | absente : lecture seule | `1` enregistre les outils qui modifient votre plan. |
 | `AVENIR_MCP_REQUIRE_ELICITATION` | absente | `1` n'accepte qu'un oui donné dans le client : pas de codes de confirmation. |
+| `AVENIR_MCP_AUTO_CONFIRM` | absente | `1` (ce fork seulement) applique sans demander les écritures que `undo_operation` peut annuler. |
 | `AVENIR_MCP_TRANSPORT` | `stdio` | `stdio` ou `http`. |
 | `AVENIR_MCP_HOST` | `127.0.0.1` | Adresse HTTP. |
 | `AVENIR_MCP_PORT` | `8103` | Port HTTP. |
@@ -70,7 +71,7 @@ macOS peut demander une fois l'autorisation de laisser `security` lire l'éléme
 
 ### `AVENIR_MCP_WRITE`
 
-Exactement `1` enregistre les 14 outils d'écriture. Toute autre valeur, ou aucune, garde
+Exactement `1` enregistre les 15 outils d'écriture. Toute autre valeur, ou aucune, garde
 le serveur en lecture seule : ces outils ne sont alors ni listés ni appelables. Lue une
 fois, au démarrage.
 
@@ -81,6 +82,19 @@ confirmation du client lui-même. Les codes de confirmation ne sont ni émis ni 
 une question fermée vaut un non, et un client qui ne sait pas demander reçoit une erreur.
 À utiliser quand le modèle pourrait transmettre un code sans vous demander — voir
 [Confirmation](/avenir-mcp/fr/concepts/confirmation/#naccepter-que-votre-propre-réponse).
+
+### `AVENIR_MCP_AUTO_CONFIRM`
+
+Exactement `1`, dans ce fork seulement : une écriture que `undo_operation` peut annuler
+s'applique aussitôt, sans fenêtre de confirmation ni code, et le serveur l'écrit dans ses
+journaux en avertissement. Les écritures que l'annulation ne peut pas défaire demandent
+toujours : `split_transaction`, `create_category`, `update_category`, l'approbation par
+dates, `apply_categories` avec `approve`, un objectif que YNAB ne peut pas remettre, et
+toute annulation. Ainsi `reconcile_account` rapproche dès le premier appel quand les
+soldes concordent, et avec `adjust` crée aussitôt la transaction **Balance adjustment**.
+`approve_transactions` avec des identifiants ne demande jamais, avec ou sans ce réglage.
+Un code de confirmation transmis est toujours vérifié. Incompatible avec
+`AVENIR_MCP_REQUIRE_ELICITATION=1` : le serveur refuse de démarrer.
 
 ### `AVENIR_MCP_TRANSPORT`, `AVENIR_MCP_HOST`, `AVENIR_MCP_PORT`
 
